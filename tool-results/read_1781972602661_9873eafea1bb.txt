@@ -1,0 +1,888 @@
+     1→class NumeriaConference {
+     2→  constructor() {
+     3→    this.localStream = null;
+     4→    this.screenStream = null;
+     5→    this.peerConnections = {};
+     6→    this.ws = null;
+     7→    this.isMuted = false;
+     8→    this.isCameraOff = false;
+     9→    this.isScreenSharing = false;
+    10→    this.mediaRecorder = null;
+    11→    this.recordingChunks = [];
+    12→    this.timerInterval = null;
+    13→    this.unreadMessages = 0;
+    14→    this.localPeerId = this.generatePeerId();
+    15→    this.localUserName = typeof CURRENT_USER !== 'undefined' ? CURRENT_USER : 'Invité';
+    16→    this.roomCode = typeof ROOM_CODE !== 'undefined' ? ROOM_CODE : null;
+    17→    this.wsUrl = typeof WS_URL !== 'undefined' ? WS_URL : null;
+    18→
+    19→    this.statusElement = document.querySelector('#connection-status');
+    20→    this.videoCountElement = document.querySelector('#video-count');
+    21→    this.chatBadge = document.querySelector('#chatBadge');
+    22→    this.chatSidebar = document.querySelector('#chat-sidebar');
+    23→    this.participantsSidebar = document.querySelector('#participants-sidebar');
+    24→    this.chatFeed = document.querySelector('#chatFeed');
+    25→    this.chatInput = document.querySelector('#chat-input');
+    26→    this.participantsList = document.querySelector('#participants-list');
+    27→    this.waitingQueue = document.querySelector('#waiting-queue');
+    28→    this.waitingCount = document.querySelector('#waiting-count');
+    29→    this.localVideoElement = document.querySelector('#local-video');
+    30→    this.localCameraOff = document.querySelector('#local-camera-off');
+    31→    this.copyRoomCodeButton = document.querySelector('#copyRoomCode');
+    32→    this.meetingTimer = document.querySelector('#meeting-timer');
+    33→    this.connectionTimer = null;
+    34→    this.startTime = null;
+    35→    this.shouldReconnect = true;
+    36→    this.screenShareTrack = null;
+    37→  }
+    38→
+    39→  init() {
+    40→    if (!this.roomCode || !this.wsUrl) {
+    41→      this.showError('Le code de réunion ou l’URL WebSocket est manquant.');
+    42→      return;
+    43→    }
+    44→
+    45→    this.showStatus('Initialisation de la réunion...', false);
+    46→    this.bindGlobalButtons();
+    47→    this.checkBrowserSupport();
+    48→    this.getUserMedia().finally(() => this.connectWebSocket());
+    49→    this.startTimer();
+    50→  }
+    51→
+    52→  checkBrowserSupport() {
+    53→    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    54→      this.showError('WebRTC non supporté dans ce navigateur. Utilisez Chrome, Firefox, Safari ou Edge récent.');
+    55→      throw new Error('WebRTC unsupported');
+    56→    }
+    57→    if (!window.RTCPeerConnection) {
+    58→      this.showError('Votre navigateur ne supporte pas RTCPeerConnection.');
+    59→      throw new Error('RTCPeerConnection unsupported');
+    60→    }
+    61→  }
+    62→
+    63→  async getUserMedia() {
+    64→    try {
+    65→      this.localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    66→      this.localVideoElement.srcObject = this.localStream;
+    67→      this.localVideoElement.play().catch(() => {});
+    68→      this.showStatus('Caméra et micro prêts. Connexion au signal...', false);
+    69→    } catch (error) {
+    70→      console.warn('Erreur getUserMedia:', error);
+    71→      try {
+    72→        this.localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+    73→        this.localVideoElement.srcObject = this.localStream;
+    74→        this.localVideoElement.play().catch(() => {});
+    75→        this.showStatus('Micro actif, caméra désactivée.', true);
+    76→        this.isCameraOff = true;
+    77→        this.updateLocalCameraState();
+    78→      } catch (secondaryError) {
+    79→        console.error('Permis refusés ou absence de média:', secondaryError);
+    80→        this.showError('Impossible d’accéder à la caméra et au micro. Vérifiez les permissions du navigateur.');
+    81→        this.setButtonDisabled('#btn-camera', true);
+    82→        this.setButtonDisabled('#btn-mute', true);
+    83→        this.showStatus('Média non disponible.', true);
+    84→      }
+    85→    }
+    86→  }
+    87→
+    88→  connectWebSocket() {
+    89→    if (!this.shouldReconnect) {
+    90→      return;
+    91→    }
+    92→    this.showStatus('Connexion WebSocket en cours...', false);
+    93→    try {
+    94→      this.ws = new WebSocket(this.wsUrl);
+    95→      this.ws.addEventListener('open', () => this.onWsOpen());
+    96→      this.ws.addEventListener('message', event => this.onWsMessage(event));
+    97→      this.ws.addEventListener('close', () => this.onWsClose());
+    98→      this.ws.addEventListener('error', () => this.onWsError());
+    99→    } catch (error) {
+   100→      console.error('Erreur WebSocket:', error);
+   101→      this.showError('Impossible d’établir la connexion en temps réel.');
+   102→    }
+   103→  }
+   104→
+   105→  onWsOpen() {
+   106→    this.showStatus('WebSocket connecté ✓', false);
+   107→    this.sendMessage({
+   108→      type: 'join',
+   109→      peer_id: this.localPeerId,
+   110→      username: this.localUserName,
+   111→      user_id: CURRENT_USER_ID,
+   112→    });
+   113→  }
+   114→
+   115→  onWsMessage(event) {
+   116→    let payload;
+   117→    try {
+   118→      payload = JSON.parse(event.data);
+   119→    } catch (error) {
+   120→      console.warn('Message WebSocket invalide:', error, event.data);
+   121→      return;
+   122→    }
+   123→    this.handleSignaling(payload);
+   124→  }
+   125→
+   126→  onWsClose() {
+   127→    if (!this.shouldReconnect) {
+   128→      this.showStatus('Connexion fermée.', true);
+   129→      return;
+   130→    }
+   131→    this.showStatus('Connexion WebSocket perdue. Reconnexion...', true);
+   132→    setTimeout(() => this.connectWebSocket(), 3000);
+   133→  }
+   134→
+   135→  onWsError() {
+   136→    this.showStatus('Erreur WebSocket détectée.', true);
+   137→  }
+   138→
+   139→  sendMessage(data) {
+   140→    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+   141→      console.warn('WebSocket non prêt pour envoyer:', data);
+   142→      return;
+   143→    }
+   144→    this.ws.send(JSON.stringify(data));
+   145→  }
+   146→
+   147→  async handleSignaling(data) {
+   148→    switch (data.type) {
+   149→      case 'participants_list':
+   150→        await this.processParticipants(data.participants || []);
+   151→        this.renderChatHistory(data.chat_history || []);
+   152→        break;
+   153→      case 'user_joined':
+   154→        if (data.peer_id === this.localPeerId) return;
+   155→        this.addParticipantToSidebar(data.peer_id, data.username, data.is_host);
+   156→        await this.createPeerConnection(data.peer_id, false);
+   157→        break;
+   158→      case 'user_left':
+   159→        this.removeRemoteVideo(data.peer_id);
+   160→        this.removeParticipantFromSidebar(data.peer_id);
+   161→        break;
+   162→      case 'mute_all':
+   163→        this.setLocalMute(true, true);
+   164→        this.showToast('L’hôte a coupé le micro de tous.');
+   165→        break;
+   166→      case 'camera_off_all':
+   167→        this.setLocalCamera(false, true);
+   168→        this.showToast('L’hôte a coupé la caméra de tous.');
+   169→        break;
+   170→      case 'waiting_list':
+   171→        if (IS_HOST) {
+   172→          this.renderWaitingList(data.waiting || []);
+   173→        }
+   174→        break;
+   175→      case 'admitted':
+   176→        if (data.target === undefined || data.target === this.localPeerId) {
+   177→          this.showToast('Vous avez été admis·e en réunion.', false);
+   178→          setTimeout(() => {
+   179→            window.location.reload();
+   180→          }, 800);
+   181→        }
+   182→        break;
+   183→      case 'rejected':
+   184→        if (data.target === undefined || data.target === this.localPeerId) {
+   185→          this.showError(data.message || 'Votre participation a été refusée.');
+   186→          setTimeout(() => {
+   187→            window.location.href = '/visio/';
+   188→          }, 2000);
+   189→        }
+   190→        break;
+   191→      case 'removed':
+   192→        if (data.target === undefined || data.target === this.localPeerId) {
+   193→          this.showToast(data.message || 'Vous avez été retiré·e par l’hôte.', true);
+   194→          setTimeout(() => this.leaveMeeting(), 1200);
+   195→        }
+   196→        break;
+   197→      case 'offer':
+   198→        if (data.target !== this.localPeerId) return;
+   199→        await this.receiveOffer(data);
+   200→        break;
+   201→      case 'answer':
+   202→        if (data.target !== this.localPeerId) return;
+   203→        await this.receiveAnswer(data);
+   204→        break;
+   205→      case 'ice_candidate':
+   206→        if (data.target !== this.localPeerId) return;
+   207→        await this.addIceCandidate(data);
+   208→        break;
+   209→      case 'chat':
+   210→        this.displayChatMessage(data.sender, data.message, false);
+   211→        break;
+   212→      case 'raise_hand':
+   213→        this.updateParticipantState(data.peer_id, 'hand');
+   214→        break;
+   215→      case 'mute_status':
+   216→        this.updateParticipantState(data.peer_id, 'mute', data.value);
+   217→        break;
+   218→      case 'camera_status':
+   219→        this.updateParticipantState(data.peer_id, 'camera', data.value);
+   220→        break;
+   221→      case 'meeting_ended':
+   222→        this.showToast('La réunion a été terminée par l’hôte.', true);
+   223→        setTimeout(() => this.leaveMeeting(), 2500);
+   224→        break;
+   225→      case 'error':
+   226→        this.showError(data.message || 'Erreur de réunion.');
+   227→        break;
+   228→      default:
+   229→        console.debug('Signal inconnu reçu:', data);
+   230→        break;
+   231→    }
+   232→  }
+   233→
+   234→  async processParticipants(participants) {
+   235→    if (!this.participantsList) return;
+   236→    this.participantsList.innerHTML = '';
+   237→    const remoteParticipants = [];
+   238→
+   239→    participants.forEach(item => {
+   240→      if (item.peer_id === this.localPeerId) return;
+   241→      this.addParticipantToSidebar(item.peer_id, item.username, item.is_host);
+   242→      remoteParticipants.push(item);
+   243→    });
+   244→    this.updateVideoCount(remoteParticipants.length + 1);
+   245→
+   246→    await Promise.all(remoteParticipants.map(item => this.createPeerConnection(item.peer_id, true)));
+   247→  }
+   248→
+   249→  renderChatHistory(messages) {
+   250→    this.chatFeed.innerHTML = '';
+   251→    messages.forEach(message => this.displayChatMessage(message.sender, message.message, message.sender === this.localUserName));
+   252→  }
+   253→
+   254→  addParticipantToSidebar(peerId, username, isHost = false) {
+   255→    if (!this.participantsList) return;
+   256→    const existing = this.participantsList.querySelector(`[data-peer-id="${peerId}"]`);
+   257→    if (existing) return;
+   258→    const item = document.createElement('div');
+   259→    item.dataset.peerId = peerId;
+   260→    item.className = 'rounded-3xl border border-slate-700 bg-[#020617] p-4';
+   261→    item.innerHTML = `<div class="flex items-center justify-between gap-3"><div><p class="font-semibold text-white">${this.escapeHtml(username)}</p><p class="text-xs text-slate-400">${isHost ? 'Hôte' : 'Participant'}</p></div><div class="flex items-center gap-2"><span id="participant-status-${peerId}" class="text-xs text-teal-300">En ligne</span>${IS_HOST && !isHost ? `<button type="button" data-remove-participant="${this.escapeHtml(peerId)}" class="rounded-full bg-red-700 px-3 py-1 text-xs font-semibold text-white">Retirer</button>` : ''}</div></div>`;
+   262→    this.participantsList.appendChild(item);
+   263→    this.updateVideoCount();
+   264→  }
+   265→
+   266→  renderWaitingList(waiting) {
+   267→    if (!this.waitingQueue) return;
+   268→    this.waitingQueue.innerHTML = '';
+   269→    waiting.forEach(item => {
+   270→      const row = document.createElement('div');
+   271→      row.dataset.peerId = item.peer_id;
+   272→      row.className = 'rounded-3xl border border-slate-700 bg-[#020617] p-4 flex items-center justify-between gap-3';
+   273→      row.innerHTML = `
+   274→        <div>
+   275→          <p class="font-semibold text-white">${this.escapeHtml(item.username)}</p>
+   276→          <p class="text-xs text-slate-400">En attente d’admission</p>
+   277→        </div>
+   278→        <div class="flex gap-2">
+   279→          <button data-admit-participant="${this.escapeHtml(item.peer_id)}" class="rounded-3xl bg-teal-500 px-3 py-2 text-xs font-semibold text-slate-950">Admettre</button>
+   280→          <button data-reject-participant="${this.escapeHtml(item.peer_id)}" class="rounded-3xl bg-red-600 px-3 py-2 text-xs font-semibold text-white">Rejeter</button>
+   281→        </div>
+   282→      `;
+   283→      this.waitingQueue.appendChild(row);
+   284→    });
+   285→    this.updateWaitingCount(waiting.length);
+   286→  }
+   287→
+   288→  updateWaitingCount(count) {
+   289→    if (!this.waitingCount) return;
+   290→    this.waitingCount.textContent = count.toString();
+   291→  }
+   292→
+   293→  removeParticipantFromSidebar(peerId) {
+   294→    const participant = this.participantsList.querySelector(`[data-peer-id="${peerId}"]`);
+   295→    if (participant) {
+   296→      participant.remove();
+   297→      this.updateVideoCount();
+   298→    }
+   299→    if (this.peerConnections[peerId]) {
+   300→      this.peerConnections[peerId].close();
+   301→      delete this.peerConnections[peerId];
+   302→    }
+   303→  }
+   304→
+   305→  admitParticipant(peerId) {
+   306→    this.sendMessage({ type: 'admit_participant', target: peerId });
+   307→  }
+   308→
+   309→  rejectParticipant(peerId) {
+   310→    this.sendMessage({ type: 'reject_participant', target: peerId });
+   311→  }
+   312→
+   313→  removeParticipant(peerId) {
+   314→    this.sendMessage({ type: 'remove_participant', target: peerId });
+   315→  }
+   316→
+   317→  async createPeerConnection(peerId, initiator) {
+   318→    if (this.peerConnections[peerId]) {
+   319→      return this.peerConnections[peerId];
+   320→    }
+   321→
+   322→    const configuration = {
+   323→      iceServers: [
+   324→        { urls: 'stun:stun.l.google.com:19302' },
+   325→        { urls: 'stun:stun1.l.google.com:19302' },
+   326→        { urls: 'stun:stun2.l.google.com:19302' },
+   327→      ],
+   328→    };
+   329→    const pc = new RTCPeerConnection(configuration);
+   330→    this.peerConnections[peerId] = pc;
+   331→
+   332→    pc.onicecandidate = event => {
+   333→      if (event.candidate) {
+   334→        this.sendMessage({
+   335→          type: 'ice_candidate',
+   336→          target: peerId,
+   337→          candidate: event.candidate,
+   338→        });
+   339→      }
+   340→    };
+   341→
+   342→    pc.ontrack = event => {
+   343→      this.addRemoteVideo(peerId, event.streams[0], 'Participant');
+   344→    };
+   345→
+   346→    pc.onconnectionstatechange = () => {
+   347→      const state = pc.connectionState;
+   348→      const tile = document.querySelector(`#remote-tile-${peerId}`);
+   349→      if (tile) {
+   350→        tile.dataset.connection = state;
+   351→      }
+   352→      if (state === 'failed' || state === 'disconnected') {
+   353→        this.showToast(`Connexion perdue avec ${peerId}.`, true);
+   354→      }
+   355→    };
+   356→
+   357→    if (this.localStream) {
+   358→      if (this.isScreenSharing && this.screenStream) {
+   359→        const sharedVideoTrack = this.screenStream.getVideoTracks()[0];
+   360→        if (sharedVideoTrack) {
+   361→          pc.addTrack(sharedVideoTrack, this.screenStream);
+   362→        }
+   363→        this.localStream.getAudioTracks().forEach(track => pc.addTrack(track, this.localStream));
+   364→      } else {
+   365→        this.localStream.getTracks().forEach(track => pc.addTrack(track, this.localStream));
+   366→      }
+   367→    }
+   368→
+   369→    if (initiator) {
+   370→      await this.createOffer(peerId);
+   371→    }
+   372→
+   373→    return pc;
+   374→  }
+   375→
+   376→  async createOffer(peerId) {
+   377→    const pc = this.peerConnections[peerId];
+   378→    if (!pc) return;
+   379→
+   380→    try {
+   381→      const offer = await pc.createOffer();
+   382→      await pc.setLocalDescription(offer);
+   383→      this.sendMessage({
+   384→        type: 'offer',
+   385→        target: peerId,
+   386→        sdp: offer.sdp,
+   387→      });
+   388→    } catch (error) {
+   389→      console.error('Erreur création offre:', error);
+   390→      this.showError('Impossible de créer l’offre WebRTC.');
+   391→    }
+   392→  }
+   393→
+   394→  async receiveOffer(data) {
+   395→    const peerId = data.from;
+   396→    if (!peerId) return;
+   397→    const pc = await this.createPeerConnection(peerId, false);
+   398→    try {
+   399→      await pc.setRemoteDescription({ type: 'offer', sdp: data.sdp });
+   400→      const answer = await pc.createAnswer();
+   401→      await pc.setLocalDescription(answer);
+   402→      this.sendMessage({
+   403→        type: 'answer',
+   404→        target: peerId,
+   405→        sdp: answer.sdp,
+   406→      });
+   407→    } catch (error) {
+   408→      console.error('Erreur réception offre:', error);
+   409→      this.showError('Impossible de traiter l’offre entrante.');
+   410→    }
+   411→  }
+   412→
+   413→  async receiveAnswer(data) {
+   414→    const peerId = data.from;
+   415→    const pc = this.peerConnections[peerId];
+   416→    if (!pc) return;
+   417→    try {
+   418→      await pc.setRemoteDescription({ type: 'answer', sdp: data.sdp });
+   419→    } catch (error) {
+   420→      console.error('Erreur réception réponse:', error);
+   421→      this.showError('Impossible de traiter la réponse WebRTC.');
+   422→    }
+   423→  }
+   424→
+   425→  async addIceCandidate(data) {
+   426→    const peerId = data.from;
+   427→    const pc = this.peerConnections[peerId];
+   428→    if (!pc || !data.candidate) return;
+   429→    try {
+   430→      await pc.addIceCandidate(data.candidate);
+   431→    } catch (error) {
+   432→      console.warn('Impossible d’ajouter ICE candidate:', error);
+   433→    }
+   434→  }
+   435→
+   436→  addRemoteVideo(peerId, stream, username = 'Participant') {
+   437→    let tile = document.querySelector(`#remote-tile-${peerId}`);
+   438→    if (!tile) {
+   439→      tile = document.createElement('div');
+   440→      tile.id = `remote-tile-${peerId}`;
+   441→      tile.className = 'relative overflow-hidden rounded-[2rem] border border-white/10 bg-[#08101F] shadow-inner shadow-black/40';
+   442→      tile.innerHTML = `
+   443→        <video id="remote-video-${peerId}" autoplay playsinline class="h-full w-full min-h-[220px] object-cover"></video>
+   444→        <div class="absolute left-4 bottom-4 rounded-full bg-[#0F766E]/90 px-3 py-1 text-sm font-semibold text-white">${this.escapeHtml(username)}</div>
+   445→        <div id="remote-muted-${peerId}" class="absolute right-4 top-4 hidden rounded-full bg-black/70 px-3 py-1 text-xs text-white">🔇</div>
+   446→      `;
+   447→      document.querySelector('#video-grid')?.appendChild(tile);
+   448→      this.updateVideoCount();
+   449→    }
+   450→    const video = tile.querySelector('video');
+   451→    if (video) {
+   452→      video.srcObject = stream;
+   453→      video.play().catch(() => {});
+   454→    }
+   455→  }
+   456→
+   457→  removeRemoteVideo(peerId) {
+   458→    const tile = document.querySelector(`#remote-tile-${peerId}`);
+   459→    if (tile) {
+   460→      tile.remove();
+   461→      delete this.peerConnections[peerId];
+   462→      this.updateVideoCount();
+   463→    }
+   464→    if (this.peerConnections[peerId]) {
+   465→      this.peerConnections[peerId].close();
+   466→      delete this.peerConnections[peerId];
+   467→    }
+   468→  }
+   469→
+   470→  toggleMute() {
+   471→    if (!this.localStream) return;
+   472→    this.setLocalMute(!this.isMuted, true);
+   473→  }
+   474→
+   475→  toggleCamera() {
+   476→    if (!this.localStream) return;
+   477→    this.setLocalCamera(this.isCameraOff, true);
+   478→  }
+   479→
+   480→  updateLocalCameraState() {
+   481→    if (!this.localCameraOff) return;
+   482→    this.localCameraOff.classList.toggle('hidden', !this.isCameraOff);
+   483→  }
+   484→
+   485→  setLocalMute(muted, notify = false) {
+   486→    if (!this.localStream) return;
+   487→    this.isMuted = muted;
+   488→    this.localStream.getAudioTracks().forEach(track => track.enabled = !this.isMuted);
+   489→    const button = document.querySelector('#btn-mute');
+   490→    if (button) {
+   491→      button.classList.toggle('bg-red-600', this.isMuted);
+   492→      button.textContent = this.isMuted ? '🔇 Micro coupé' : '🎤 Micro actif';
+   493→    }
+   494→    if (notify) {
+   495→      this.sendMessage({ type: 'mute_status', peer_id: this.localPeerId, value: this.isMuted });
+   496→    }
+   497→  }
+   498→
+   499→  setLocalCamera(enabled, notify = false) {
+   500→    if (!this.localStream) return;
+   501→    this.isCameraOff = !enabled;
+   502→    this.localStream.getVideoTracks().forEach(track => track.enabled = enabled);
+   503→    this.updateLocalCameraState();
+   504→    const button = document.querySelector('#btn-camera');
+   505→    if (button) {
+   506→      button.classList.toggle('bg-red-600', this.isCameraOff);
+   507→      button.textContent = this.isCameraOff ? '🚫 Vidéo coupée' : '📷 Vidéo active';
+   508→    }
+   509→    if (!enabled && this.isScreenSharing) {
+   510→      this.stopScreenShare();
+   511→    }
+   512→    if (notify) {
+   513→      this.sendMessage({ type: 'camera_status', peer_id: this.localPeerId, value: enabled });
+   514→    }
+   515→  }
+   516→
+   517→  async startScreenShare() {
+   518→    if (this.isScreenSharing) {
+   519→      return this.stopScreenShare();
+   520→    }
+   521→    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+   522→      this.showToast('Partage d’écran non supporté par votre navigateur.', true);
+   523→      return;
+   524→    }
+   525→
+   526→    try {
+   527→      const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+   528→      const screenTrack = screenStream.getVideoTracks()[0];
+   529→      const cameraTrack = this.localStream?.getVideoTracks()[0];
+   530→
+   531→      if (!screenTrack) {
+   532→        throw new Error('Aucune piste d’écran disponible.');
+   533→      }
+   534→
+   535→      this.isScreenSharing = true;
+   536→      this.screenStream = screenStream;
+   537→      this.screenShareTrack = screenTrack;
+   538→      document.querySelector('#btn-screen')?.classList.add('bg-teal-500');
+   539→      document.querySelector('#btn-screen').textContent = '🛑 Arrêter le partage';
+   540→      this.hideScreenSharePreview();
+   541→      if (this.localStream) {
+   542→        this.localVideoElement.srcObject = this.localStream;
+   543→        this.localVideoElement.play().catch(() => {});
+   544→      }
+   545→
+   546→      Object.values(this.peerConnections).forEach(pc => {
+   547→        const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+   548→        if (sender) {
+   549→          sender.replaceTrack(screenTrack);
+   550→        }
+   551→      });
+   552→
+   553→      screenTrack.onended = () => this.stopScreenShare();
+   554→    } catch (error) {
+   555→      console.error('Erreur partage d’écran:', error);
+   556→      this.showError('Impossible de partager l’écran.');
+   557→    }
+   558→  }
+   559→
+   560→  stopScreenShare() {
+   561→    if (!this.isScreenSharing) return;
+   562→    const cameraTrack = this.localStream?.getVideoTracks()[0];
+   563→
+   564→    if (this.screenShareTrack) {
+   565→      this.screenShareTrack.stop();
+   566→      this.screenShareTrack = null;
+   567→    }
+   568→
+   569→    if (this.screenStream) {
+   570→      this.screenStream.getTracks().forEach(track => track.stop());
+   571→      this.screenStream = null;
+   572→    }
+   573→
+   574→    if (cameraTrack) {
+   575→      Object.values(this.peerConnections).forEach(pc => {
+   576→        const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+   577→        if (sender) {
+   578→          sender.replaceTrack(cameraTrack);
+   579→        }
+   580→      });
+   581→    }
+   582→
+   583→    this.localVideoElement.srcObject = this.localStream;
+   584→    this.localVideoElement.play().catch(() => {});
+   585→    this.isScreenSharing = false;
+   586→    this.showScreenSharePreview();
+   587→    const button = document.querySelector('#btn-screen');
+   588→    if (button) {
+   589→      button.classList.remove('bg-teal-500');
+   590→      button.textContent = '🖥️ Partager l’écran';
+   591→    }
+   592→  }
+   593→
+   594→  hideScreenSharePreview() {
+   595→    document.querySelector('#video-grid')?.classList.add('hidden');
+   596→    document.querySelector('#local-video-container')?.classList.add('hidden');
+   597→    document.querySelector('header')?.classList.add('hidden');
+   598→    document.querySelector('main')?.classList.add('hidden');
+   599→  }
+   600→
+   601→  showScreenSharePreview() {
+   602→    document.querySelector('#video-grid')?.classList.remove('hidden');
+   603→    document.querySelector('#local-video-container')?.classList.remove('hidden');
+   604→    document.querySelector('header')?.classList.remove('hidden');
+   605→    document.querySelector('main')?.classList.remove('hidden');
+   606→  }
+   607→
+   608→  toggleChat() {
+   609→    if (!this.chatSidebar) return;
+   610→    this.chatSidebar.classList.toggle('hidden');
+   611→    if (!this.chatSidebar.classList.contains('hidden')) {
+   612→      this.unreadMessages = 0;
+   613→      this.updateChatBadge();
+   614→    }
+   615→  }
+   616→
+   617→  toggleParticipants() {
+   618→    if (!this.participantsSidebar) return;
+   619→    this.participantsSidebar.classList.toggle('hidden');
+   620→  }
+   621→
+   622→  async sendChatMessage() {
+   623→    const content = this.chatInput.value.trim();
+   624→    if (!content) return;
+   625→    this.sendMessage({ type: 'chat', message: content });
+   626→    this.displayChatMessage(this.localUserName, content, true);
+   627→    this.chatInput.value = '';
+   628→  }
+   629→
+   630→  displayChatMessage(username, message, isLocal) {
+   631→    if (!this.chatFeed) return;
+   632→    const line = document.createElement('div');
+   633→    line.className = `rounded-3xl px-4 py-3 ${isLocal ? 'bg-teal-500/15 text-white' : 'bg-white/5 text-slate-200'}`;
+   634→    line.innerHTML = `<p class="text-xs text-slate-400">${this.escapeHtml(username)}</p><p class="mt-1 text-sm">${this.escapeHtml(message)}</p>`;
+   635→    this.chatFeed.appendChild(line);
+   636→    this.chatFeed.scrollTop = this.chatFeed.scrollHeight;
+   637→    if (this.chatSidebar && this.chatSidebar.classList.contains('hidden')) {
+   638→      this.unreadMessages += 1;
+   639→      this.updateChatBadge();
+   640→    }
+   641→  }
+   642→
+   643→  updateChatBadge() {
+   644→    if (!this.chatBadge) return;
+   645→    if (this.unreadMessages > 0) {
+   646→      this.chatBadge.classList.remove('hidden');
+   647→      this.chatBadge.textContent = this.unreadMessages;
+   648→    } else {
+   649→      this.chatBadge.classList.add('hidden');
+   650→    }
+   651→  }
+   652→
+   653→  updateParticipantState(peerId, kind, value) {
+   654→    const participant = this.participantsList.querySelector(`[data-peer-id="${peerId}"]`);
+   655→    if (!participant) return;
+   656→    let statusLabel = participant.querySelector(`#participant-status-${peerId}`);
+   657→    if (!statusLabel) return;
+   658→
+   659→    if (kind === 'hand') {
+   660→      statusLabel.textContent = 'Main levée';
+   661→    }
+   662→    if (kind === 'mute') {
+   663→      statusLabel.textContent = value ? 'Muet' : 'Micro actif';
+   664→    }
+   665→    if (kind === 'camera') {
+   666→      statusLabel.textContent = value ? 'Vidéo active' : 'Vidéo coupée';
+   667→      const tile = document.querySelector(`#remote-tile-${peerId}`);
+   668→      if (tile) {
+   669→        tile.classList.toggle('opacity-50', !value);
+   670→      }
+   671→    }
+   672→  }
+   673→
+   674→  startTimer() {
+   675→    if (this.timerInterval) return;
+   676→    this.startTime = Date.now();
+   677→    this.timerInterval = setInterval(() => {
+   678→      const seconds = Math.floor((Date.now() - this.startTime) / 1000);
+   679→      const hh = String(Math.floor(seconds / 3600)).padStart(2, '0');
+   680→      const mm = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
+   681→      const ss = String(seconds % 60).padStart(2, '0');
+   682→      if (this.meetingTimer) {
+   683→        this.meetingTimer.textContent = `${hh}:${mm}:${ss}`;
+   684→      }
+   685→    }, 1000);
+   686→  }
+   687→
+   688→  updateVideoCount(count) {
+   689→    if (!this.videoCountElement) return;
+   690→    if (typeof count === 'undefined' || count === null) {
+   691→      count = 1 + (document.querySelectorAll('#video-grid > div').length || 0);
+   692→    }
+   693→    this.videoCountElement.textContent = count.toString();
+   694→  }
+   695→
+   696→  async leaveMeeting() {
+   697→    this.shouldReconnect = false;
+   698→    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+   699→      this.sendMessage({ type: 'leave', peer_id: this.localPeerId });
+   700→      this.ws.close();
+   701→    }
+   702→    if (this.localStream) {
+   703→      this.localStream.getTracks().forEach(track => track.stop());
+   704→    }
+   705→    Object.values(this.peerConnections).forEach(pc => {
+   706→      pc.close();
+   707→    });
+   708→    window.location.href = '/visio/';
+   709→  }
+   710→
+   711→  async muteAll() {
+   712→    if (!IS_HOST) {
+   713→      this.showToast('Seul l’hôte peut couper tous les micros.', true);
+   714→      return;
+   715→    }
+   716→    this.sendMessage({ type: 'mute_all' });
+   717→  }
+   718→
+   719→  async cameraOffAll() {
+   720→    if (!IS_HOST) {
+   721→      this.showToast('Seul l’hôte peut couper toutes les caméras.', true);
+   722→      return;
+   723→    }
+   724→    this.sendMessage({ type: 'camera_off_all' });
+   725→  }
+   726→
+   727→  async endMeeting() {
+   728→    if (!IS_HOST) {
+   729→      this.showToast('Seul l’hôte peut terminer la réunion.', true);
+   730→      return;
+   731→    }
+   732→    try {
+   733→      const response = await fetch(`/visio/room/${this.roomCode}/end/`, {
+   734→        method: 'POST',
+   735→        headers: {
+   736→          'Content-Type': 'application/x-www-form-urlencoded',
+   737→          'X-CSRFToken': this.getCsrfToken(),
+   738→        },
+   739→        body: '',
+   740→      });
+   741→      if (response.ok) {
+   742→        this.shouldReconnect = false;
+   743→        this.showToast('Réunion terminée pour tous.', false);
+   744→        this.leaveMeeting();
+   745→      } else {
+   746→        this.showError('Impossible de terminer la réunion.');
+   747→      }
+   748→    } catch (error) {
+   749→      console.error('Erreur end meeting:', error);
+   750→      this.showError('Erreur réseau lors de la fin de réunion.');
+   751→    }
+   752→  }
+   753→
+   754→  bindGlobalButtons() {
+   755→    document.querySelector('#btn-mute')?.addEventListener('click', () => this.toggleMute());
+   756→    document.querySelector('#btn-camera')?.addEventListener('click', () => this.toggleCamera());
+   757→    document.querySelector('#btn-mute-all')?.addEventListener('click', () => this.muteAll());
+   758→    document.querySelector('#btn-camera-all')?.addEventListener('click', () => this.cameraOffAll());
+   759→    document.querySelector('#btn-screen')?.addEventListener('click', () => this.startScreenShare());
+   760→    document.querySelector('#btn-chat')?.addEventListener('click', () => this.toggleChat());
+   761→    document.querySelector('#btn-participants')?.addEventListener('click', () => this.toggleParticipants());
+   762→    document.querySelector('#btn-hand')?.addEventListener('click', () => this.sendMessage({ type: 'raise_hand', peer_id: this.localPeerId }));
+   763→    document.querySelector('#btn-record')?.addEventListener('click', () => this.toggleRecording());
+   764→    document.querySelector('#btn-leave')?.addEventListener('click', () => this.leaveMeeting());
+   765→    document.querySelector('#btn-end')?.addEventListener('click', () => this.endMeeting());
+   766→    document.querySelector('#chat-send')?.addEventListener('click', () => this.sendChatMessage());
+   767→    this.chatInput?.addEventListener('keydown', event => {
+   768→      if (event.key === 'Enter') {
+   769→        event.preventDefault();
+   770→        this.sendChatMessage();
+   771→      }
+   772→    });
+   773→    this.copyRoomCodeButton?.addEventListener('click', () => {
+   774→      navigator.clipboard.writeText(this.roomCode).then(() => {
+   775→        this.showToast('Code de réunion copié');
+   776→      }).catch(() => {
+   777→        this.showToast('Impossible de copier le code', true);
+   778→      });
+   779→    });
+   780→
+   781→    document.body.addEventListener('click', event => {
+   782→      const admitButton = event.target.closest('[data-admit-participant]');
+   783→      const rejectButton = event.target.closest('[data-reject-participant]');
+   784→      const removeButton = event.target.closest('[data-remove-participant]');
+   785→      if (admitButton) {
+   786→        this.admitParticipant(admitButton.dataset.admitParticipant);
+   787→      }
+   788→      if (rejectButton) {
+   789→        this.rejectParticipant(rejectButton.dataset.rejectParticipant);
+   790→      }
+   791→      if (removeButton) {
+   792→        this.removeParticipant(removeButton.dataset.removeParticipant);
+   793→      }
+   794→    });
+   795→  }
+   796→
+   797→  toggleRecording() {
+   798→    if (!this.localStream) {
+   799→      this.showToast('Aucun flux disponible pour l’enregistrement.', true);
+   800→      return;
+   801→    }
+   802→    if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
+   803→      this.mediaRecorder.stop();
+   804→      return;
+   805→    }
+   806→    try {
+   807→      this.mediaRecorder = new MediaRecorder(this.localStream);
+   808→      this.recordingChunks = [];
+   809→      this.mediaRecorder.addEventListener('dataavailable', event => {
+   810→        if (event.data.size > 0) {
+   811→          this.recordingChunks.push(event.data);
+   812→        }
+   813→      });
+   814→      this.mediaRecorder.addEventListener('stop', () => {
+   815→        const blob = new Blob(this.recordingChunks, { type: 'video/webm' });
+   816→        const url = URL.createObjectURL(blob);
+   817→        const a = document.createElement('a');
+   818→        a.href = url;
+   819→        a.download = 'numeria-reunion.webm';
+   820→        a.click();
+   821→        URL.revokeObjectURL(url);
+   822→        this.showToast('Enregistrement disponible en téléchargement.');
+   823→      });
+   824→      this.mediaRecorder.start();
+   825→      this.showToast('Enregistrement démarré.');
+   826→    } catch (error) {
+   827→      console.error('MediaRecorder error:', error);
+   828→      this.showToast('Impossible de démarrer l’enregistrement.', true);
+   829→    }
+   830→  }
+   831→
+   832→  getCsrfToken() {
+   833→    const name = 'csrftoken';
+   834→    const cookies = document.cookie.split(';');
+   835→    for (const cookie of cookies) {
+   836→      const [key, value] = cookie.trim().split('=');
+   837→      if (key === name) {
+   838→        return decodeURIComponent(value);
+   839→      }
+   840→    }
+   841→    return '';
+   842→  }
+   843→
+   844→  showStatus(message, isError = false) {
+   845→    if (!this.statusElement) return;
+   846→    this.statusElement.textContent = message;
+   847→    this.statusElement.classList.toggle('text-red-400', isError);
+   848→    this.statusElement.classList.toggle('text-teal-300', !isError);
+   849→  }
+   850→
+   851→  showError(message) {
+   852→    this.showStatus(message, true);
+   853→    this.showToast(message, true);
+   854→  }
+   855→
+   856→  showToast(message, isError = false) {
+   857→    const toast = document.createElement('div');
+   858→    toast.textContent = message;
+   859→    toast.className = `fixed bottom-6 right-6 z-50 rounded-3xl px-5 py-3 text-sm text-white shadow-2xl ${isError ? 'bg-red-600' : 'bg-slate-900'}`;
+   860→    document.body.appendChild(toast);
+   861→    setTimeout(() => toast.remove(), 3200);
+   862→  }
+   863→
+   864→  escapeHtml(value) {
+   865→    const div = document.createElement('div');
+   866→    div.textContent = value;
+   867→    return div.innerHTML;
+   868→  }
+   869→
+   870→  setButtonDisabled(selector, disabled) {
+   871→    const button = document.querySelector(selector);
+   872→    if (button) {
+   873→      button.disabled = disabled;
+   874→      button.classList.toggle('opacity-50', disabled);
+   875→      button.classList.toggle('cursor-not-allowed', disabled);
+   876→    }
+   877→  }
+   878→
+   879→  generatePeerId() {
+   880→    return `${this.localUserName}-${Math.random().toString(36).slice(2, 10)}`;
+   881→  }
+   882→}
+   883→
+   884→document.addEventListener('DOMContentLoaded', () => {
+   885→  const conference = new NumeriaConference();
+   886→  conference.init();
+   887→});
+   888→
