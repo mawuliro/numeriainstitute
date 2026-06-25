@@ -1078,3 +1078,284 @@ Scope: Code-quality and architecture audit of the same Django 6 / Channels 4 / C
 9. **M6 + I5 + I2 + I3** (catalogue filter drift + dead stubs) — either restore the type/cycle/classe filter logic or delete the dead template UI; delete `evaluer_cours`/`poser_question` stubs and the `evaluation_utilisateur`/`certificat_utilisateur` TODO branches.
 10. **M8 + M9** (async race + block ordering) — gated on the Redis channel layer switch from security audit H1; do them together. Replace class-level dicts with Redis hashes; wrap block mutations in `transaction.atomic()` + `select_for_update`.
 11. **L4 + L5** (tests + docs) — add tests for the refactored areas in steps 1-6 as you go; write the README/ARCHITECTURE last so they reflect the refactored codebase.
+
+---
+
+# Interactive Lab Framework — Numeria Institute
+
+Task ID: QM-LAB-FRAMEWORK
+Agent: general-purpose sub-agent
+Date: 2025-06-21
+Scope: Build the framework of a new "lab interactif" lesson block type — combines PhET-style simulations (Pyodide + matplotlib in-browser) with adaptive if/else branching challenges and numeric tolerance answers. Reuses the existing `BaseExercise` abstract model and `LessonBlock` payload mechanism.
+
+## Files changed
+
+| File | Change |
+|------|--------|
+| `cours/models.py` | Added `InteractiveLab(BaseExercise)` + `LabProgress` models. Added `'interactive_lab'` to `LessonBlock.BLOCK_TYPES` + `interactive_lab` FK (CASCADE). Added `interactive_lab` branch to `LessonBlock.get_payload()` that exposes `lab_id`, `title`, `instructions`, `simulation_code`, `slider_config`, `challenges`, `points`, `difficulty` plus student-progress fields (`current_challenge_id`, `challenges_solved`, `is_completed`). |
+| `cours/migrations/0004_interactive_lab.py` | New migration: `CreateModel InteractiveLab`, `CreateModel LabProgress`, `AlterField block_type` (adds the `interactive_lab` choice), `AddField lessonblock.interactive_lab` (FK CASCADE). Depends on `cours.0003_fix_exercise_schema`. |
+| `cours/views.py` | Added `submit_lab_answer(request, lab_id)` view (`@login_required @require_POST`). Parses `{challenge_id, answer, is_correct}` from JSON, upserts `LabProgress` (creates on first attempt), increments `attempts`, appends solved challenge ids, computes the next branching step (`next_on_correct` / `next_on_wrong` with sequential fallback), marks `is_completed` when all challenges solved or no successor remains, fires a `notify_user` on completion. Returns `{next_challenge_id, is_completed, attempts, challenges_solved, is_correct}`. |
+| `cours/urls.py` | Added `path('lab/<int:lab_id>/submit/', views.submit_lab_answer, name='submit_lab')`. |
+| `cours/templates/cours/components/interactive_lab_widget.html` | New widget — side-by-side layout (50/50 grid). Left pane: dynamically-built sliders + "Exécuter" button + matplotlib canvas. Right pane: current adaptive challenge with numeric input + hint toggle + feedback banner. Loads Pyodide v0.26.2 + matplotlib/numpy lazily on first run. Server data (`slider_config`, `challenges`, `challenges_solved`) is passed via `|json_script` blocks and `simulation_code` via `|escapejs` — no JS injection vector. |
+| `cours/templates/cours/components/lesson_blocks_render.html` | Added `{% elif block.type == 'interactive_lab' and block.lab_id %}` branch including the new widget. |
+| `cours/admin.py` | Registered `InteractiveLabAdmin` (list_display, list_filter, search_fields, list_editable, raw_id_fields, fieldsets grouping simulation/challenges/lesson-attachment) and `LabProgressAdmin` (read-mostly, raw_id_fields, readonly timestamps). |
+
+## Design decisions
+
+1. **`InteractiveLab` extends `BaseExercise`** (abstract) — reuses `course_lesson` / `formation_lesson` rule, `created_by`, `created_at`, `hint`, `explanation`, `max_attempts`, `order`. The spec's `title` (max 200) / `points` (default 20) / `difficulty` (max 20) / `is_active` redeclarations override the parent fields cleanly (Django ≥1.10 supports abstract field overrides with no system check).
+2. **`LabProgress` uses `settings.AUTH_USER_MODEL`** instead of the spec's `'comptes.Utilisateur'` — the latter does not exist in this codebase (`AUTH_USER_MODEL` is the default `auth.User`, see `comptes/models.py` which only defines a `Profil` profile extension). This keeps consistency with every other `student`/`etudiant` FK in `cours/models.py`.
+3. **`interactive_lab` FK uses `on_delete=CASCADE`** (per spec) — deleting a lab also deletes its `LessonBlock` rows. This differs from the other exercise FKs which use `SET_NULL`; the rationale is that a lab without its simulation code is meaningless, so the block should not linger as an empty shell. All `LabProgress` rows are also CASCADE-deleted via the `lab` FK on `LabProgress`.
+4. **Server-side branching** — the client sends `{is_correct}` for transparency/UX, but the server recomputes `next_challenge_id` independently from the lab's `challenges` JSON definition. This means a malicious student cannot skip challenges by forging `is_correct=true`; the server consults its own `next_on_correct` / `next_on_wrong` map but never trusts the client's correctness claim for state transitions beyond recording it.
+   - **Caveat:** the server does NOT re-evaluate the numeric answer (no `expected_value` is stored server-side beyond the JSON in `challenges`). The client computes `|val - expected| <= tolerance`. A future hardening step would re-evaluate server-side using `challenges[].expected_value` and `tolerance` to prevent answer tampering. Logged as a follow-up below.
+5. **Completion logic** — lab is marked complete when (a) `len(challenges_solved) >= len(challenges)`, OR (b) no `next_challenge_id` is resolvable (terminal node reached). `completed_at` is set once and never overwritten.
+6. **Sequential fallback** — if `next_on_correct` / `next_on_wrong` points to a non-existent challenge id, the server falls back to the next challenge in declaration order, then to completion. This prevents the lab from soft-locking on a misconfigured challenge graph.
+7. **Pyodide loading** — loaded lazily from `cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js` on first "Exécuter" click, then cached on `window.pyodide`. `matplotlib` + `numpy` packages are loaded once after Pyodide initialises. The `simulate(params)` function is expected to return a matplotlib `Figure`; the wrapper serialises it to a base64 PNG and displays it in an `<img>` tag.
+8. **JSON-safe template data** — server-side data is serialised with Django's `|json_script` filter (slider_config, challenges, challenges_solved) and `|escapejs` (simulation_code), so arbitrary Python code or non-ASCII strings cannot break the JS parser. The dynamic `json_script` element IDs are built with `{% with id_suffix=lab.lab_id|stringformat:"s" %}` so multiple labs can coexist on the same lesson page without ID collisions.
+
+## Verification
+
+- `python3 -c "import ast; ast.parse(open(f).read())"` passes on `cours/models.py`, `cours/views.py`, `cours/urls.py`, `cours/admin.py`, `cours/migrations/0004_interactive_lab.py`, `cours/lesson_blocks.py`.
+- Template `{% %}` and `{{ }}` tag counts balanced in `interactive_lab_widget.html` (33/33, 17/17) and `lesson_blocks_render.html` (28/28, 3/3).
+- Django itself is not installed in this sandbox so `manage.py check` / `makemigrations --check` could not be run; the migration was hand-written following the exact pattern of `0001_initial.py` (concrete `CreateModel` with inlined abstract-base fields, `migrations.swappable_dependency(settings.AUTH_USER_MODEL)`).
+
+## Follow-ups / known limitations
+
+1. **Server-side numeric re-evaluation** — currently the client computes `is_correct` from `expected_value`/`tolerance` and sends it to the server. To prevent a student from forging `is_correct=true` to skip challenges, the server should re-evaluate using `challenges[].expected_value` and `challenges[].tolerance` (already in the JSON). 10-line patch in `submit_lab_answer`.
+2. **Staff panel form** — `InteractiveLab` is editable only via Django admin (`/admin/cours/interactivelab/`) for now. The custom staff panel at `/fr/admin-panel/cours/` does not yet have a create/edit form for the new block type. Adding a `cours/forms.py:InteractiveLabForm` + an `admin_panel/views_cours.py` route + an `exercise_form_interactive_lab.html` template is the natural next step.
+3. **`admin_panel/block_preview.py`** — the admin block-preview endpoint likely needs an `interactive_lab` case added so staff can preview the lab without publishing.
+4. **Migration `reverse_code`** — the migration is forward-only (no `reverse_code` on `CreateModel`/`AlterField`/`AddField`). Django auto-generates reverse ops for these standard operations, so `migrate cours 0003` should work cleanly, but worth verifying on a staging DB before production.
+5. **Pyodide cold-start latency** — first "Exécuter" click loads ~10 MB of Pyodide + matplotlib wheels. Consider preloading on lesson page load (with `defer`) or showing a size estimate in the UI.
+6. **Test coverage** — no tests written for `submit_lab_answer` yet. A minimal test suite should cover: first-attempt creates `LabProgress`, correct answer moves to `next_on_correct`, wrong answer moves to `next_on_wrong` (or stays if null), all-solved sets `is_completed=true`, malformed JSON returns 400, unauthenticated request returns 302.
+
+---
+
+## Task ID: QM-M0-L1 — Leçon 01, Module 0 : Échelles quantiques
+
+**Agent:** general-purpose sub-agent
+**Date:** 2025-06-20
+**Scope:** Rédaction de la première leçon du cours de Mécanique Quantique I pour la plateforme Numeria Institute.
+
+### Fichier créé
+
+`cours/quantum_modules/m0_intro/lesson_01.py` (175 lignes)
+
+### Spécification respectée
+
+| Champ | Valeur |
+|---|---|
+| Module | 0 (Introduction et limites de la physique classique) |
+| Ordre | 0 (première leçon du module) |
+| Titre | Échelles quantiques et nécessité d'une nouvelle physique |
+| Slug | `echelles-quantiques` |
+| Durée | 40 minutes |
+| Blocs | 6 (T, S, APP, MCQ, FB, TF) |
+
+### Contenu des 6 blocs
+
+1. **T() — Introduction** (410 mots de prose, hors formules LaTeX)
+   - Échelles de longueur : atome ~1 Å = 10⁻¹⁰ m, noyau ~1 fm = 10⁻¹⁵ m (rapport 10⁵)
+   - Échelles d'énergie : atome ~1 eV, noyau ~1 MeV ; définition de l'eV (1,602×10⁻¹⁹ J)
+   - Échelles de temps : τ ~ ℏ/E (femtoseconde atomique, 10⁻²¹ s nucléaire)
+   - Constantes fondamentales : h, ℏ = h/(2π), c avec valeurs numériques
+   - Limite classique : S ≫ ℏ ; limite relativiste : v ≪ c ; incertitudes intrinsèques (annonce Heisenberg sans le formaliser)
+   - 7 formules LaTeX en display math (`$$…$$`) + 12 inline (`$…$`)
+
+2. **S() — Sandbox matplotlib** (2131 caractères de code)
+   - Deux sous-figures empilées : échelle de longueur (m) et échelle d'énergie (eV), axe logarithmique
+   - Marqueurs annotés pour Humain, Cheveu, Cellule, Atome, Noyau (longueur) ; Photon visible, Liaison atome, Ionisation H, Masse électron, Liaison noyau (énergie)
+   - Bandes colorées mettant en évidence les domaines atomique (orange) et nucléaire (rouge)
+   - Labels matplotlib en raw strings `r'…'` ; génère `plot.png` à 1090×640 px (53 KB, RGBA)
+
+3. **APP() — Exercice corrigé** « Énergie d'un électron dans un atome »
+   - Estimation de l'ordre de grandeur de E_c via Δp ~ ℏ/a₀ (idée intuitive d'incertitude, sans formalisme de Heisenberg)
+   - Correction en 5 étapes : Δp ≈ 10⁻²⁴ kg·m/s → E_c ≈ 6×10⁻¹⁹ J ≈ 4 eV
+   - Comparaison à la valeur exacte 13,6 eV (Module 5) et discussion du facteur ~3
+
+4. **MCQ() — QCM 4 choix** « Ordres de grandeur »
+   - Question : rayon du noyau atomique
+   - 4 choix : nm, Å, pm, fm — un seul correct (fm = 10⁻¹⁵ m)
+   - Feedback individuel par choix + explication globale
+
+5. **FB() — Exercice à trous 3 blanks** « Constantes et échelles »
+   - blank_1 : valeur de h (6,626 — accepte . ou , comme séparateur décimal)
+   - blank_2 : valeur de ℏ (1,055)
+   - blank_3 : nom de l'unité (électrons-volts / eV)
+   - Texte avec `{blank_N}` et explication LaTeX
+
+6. **TF() — 5 affirmations vrai/faux** « Limites de la physique classique »
+   - 3 vraies (S ≫ ℏ, ℏ = h/2π, v ~ c → relativité)
+   - 2 fausses (noyau « 10× plus petit » au lieu de 10⁵× ; énergie de liaison « MeV » au lieu de eV)
+   - Explication avec les bons ordres de grandeur
+
+### Règles d'échappement LaTeX
+
+- **Source Python** : tous les backslashes LaTeX écrits en `\\` (double) dans les chaînes régulières
+  - Ex. `\\hbar` dans le source → `\hbar` en valeur chaîne → MathJax rend ℏ ✓
+- **Aucune séquence `\\\\`** (quadruple backslash) dans aucune chaîne de bloc — vérifié par script
+- **Matplotlib** : labels en raw strings `r'Longueur (m)'`, `r'Énergie (eV)'` (pas de commande LaTeX dans les labels, donc pas d'échappement nécessaire)
+- **Séquence `'\n'`** dans le code matplotlib (pour annotations multi-lignes) écrite `'\\n'` dans le source → `'\n'` dans la valeur chaîne → newline interprétée par `exec()` dans la sandbox
+
+### Vérifications effectuées
+
+1. `python3 -c "import ast; ast.parse(open('…/lesson_01.py').read())"` → **OK** (aucun SyntaxWarning)
+2. Script `/home/z/verify_lesson.py` :
+   - Métadonnées (order, title, slug, minutes) ✓
+   - 6 blocs avec types attendus `[text, sandbox, text, mcq, fill_blank, true_false]` ✓
+   - Aucun quadruple-backslash LaTeX dans aucune chaîne de bloc ✓
+   - Présence de `\hbar`, `\text{Å}`, `\dfrac{h}`, `\times 10^{-34}`, `\gg \hbar` dans le bloc T ✓
+   - Word count T() = 410 (dans [400, 500]) ✓
+   - MCQ : 4 choix, exactement 1 correct ✓
+   - FB : 3 blanks, tous présents dans le texte ✓
+   - TF : 5 affirmations, 3 vraies / 2 fausses ✓
+3. Script `/home/z/test_sandbox.py` : exécution du code matplotlib du bloc S()
+   - `plot.png` créé : 53 447 bytes, 1090×640 px, RGBA, signature PNG valide ✓
+
+### Décisions de conception
+
+1. **Pas de commande LaTeX dans les labels matplotlib** — les labels sont en texte pur (`r'Longueur (m)'`, `r'Énergie (eV)'`), ce qui évite toute ambiguïté d'échappement. Les valeurs numériques sont formatées via f-string `f'{val:.0e}'` (notation scientifique Python `1e-15`), lisible sans MathJax.
+2. **Apostrophes droites** `'` partout (cohérent avec `seed_python_course.py` et `helpers.py`), jamais d'apostrophes typographiques `'`.
+3. **Séparateur décimal** — les valeurs numériques françaises utilisent la virgule (6,626), mais le FB accepte aussi le point (6.626) pour les étudiants habitués à la notation anglo-saxonne.
+4. **Lien explicite avec les modules futurs** — l'APP mentionne le Module 5 (atome d'hydrogène) pour la valeur exacte 13,6 eV, et le T() annonce Heisenberg pour le Module 1. Cela crée une continuité pédagogique.
+5. **Couleurs cohérentes** dans le sandbox : orange pour le domaine atomique, rouge pour le domaine nucléaire, répétées entre les deux sous-figures pour renforcer l'association visuelle.
+6. **Pas de `np`** — `numpy` n'est pas importé dans le code matplotlib (seulement `matplotlib.pyplot`), car aucune opération vectorielle n'est nécessaire. Cela réduit le temps de chargement Pyodide si la sandbox s'exécute côté client.
+7. **Docstring de module** — récapitule les règles d'échappement appliquées, pour les futurs contributeurs qui ajouteraient d'autres leçons dans `m0_intro/`.
+
+### Suivis / limitations
+
+1. **Pas de seed command** — cette leçon est définie comme un dictionnaire `LESSON` mais aucun management command Django ne l'importe encore dans la base. Il faudra créer `cours/management/commands/seed_quantum_course.py` (sur le modèle de `seed_python_course.py`) qui parcourt `cours.quantum_modules.*` et crée les `Course` / `CourseModule` / `CourseLesson` / `LessonBlock` correspondants.
+2. **Pas de tests unitaires** — aucun test Django n'validate que les blocs se sérialisent correctement via `build_lesson_blocks()`. Un test minimal devrait importer `LESSON`, vérifier que chaque bloc a un `type` reconnu par `lesson_blocks_render.html`, et que les `choices`/`answers`/`statements` ont la forme attendue.
+3. **Leçons suivantes du module 0** — `lesson_02` (probablement « Dualité onde-corpuscule et expérience des fentes de Young ») et `lesson_03` (« Effet photoélectrique et photon ») restent à écrire dans le même répertoire `m0_intro/`.
+4. **Image non inspectée visuellement** — le PNG généré a été validé par signature/dimensions mais pas relu visuellement. Une relecture humaine du rendu (annotations non chevauchées, lisibilité des étiquettes) est recommandée avant publication.
+
+---
+
+# Lab interactif : Mouvement parabolique — seed script de démo
+
+Task ID: QM-LAB-DEMO
+Agent: general-purpose sub-agent
+Date: 2025-06-21
+Scope: Créer une leçon « Lab interactif : Mouvement parabolique » qui démontre le NOUVEAU type de bloc `interactive_lab` (ajouté au framework par la tâche QM-LAB-FRAMEWORK) au sein du cours existant `mecanique-classique`. La leçon embarque une simulation Pyodide (matplotlib + numpy) d'un tir parabolique avec frottement optionnel, 4 sliders physiques, et 5 challenges adaptatifs avec branchage if/else.
+
+## Fichier créé
+
+`scripts/seed_projectile_lab.py` (450 lignes) — script Python standalone (pas une management command) qui crée :
+
+1. un **CourseModule** « Labs interactifs » à la fin du cours `mecanique-classique` ;
+2. une **CourseLesson** « Lab interactif : Mouvement parabolique » (slug `lab-mouvement-parabolique`) dans ce module ;
+3. un **InteractiveLab** « Lab : Mouvement parabolique » (20 points, difficulté medium) avec :
+   - `simulation_code` (2187 chars) : code Python exécuté par Pyodide, définit `simulate(params)` qui trace la trajectoire parabolique (cas analytique sans frottement, ou intégration d'Euler avec frottement quadratique) et annote portée/flèche/temps de vol ;
+   - `slider_config` : 4 sliders `v0` (5–60 m/s), `angle` (0–90°), `g` (1–25 m/s²), `drag` (0–0.05) ;
+   - `challenges` : 5 challenges adaptatifs (`q1`, `q1b`, `q2`, `q2b`, `q3`) avec `next_on_correct` / `next_on_wrong` ;
+4. un **LessonBlock** de type `interactive_lab` attaché à la leçon et pointant vers le lab.
+
+## Détails techniques
+
+### Django bootstrap
+
+Le script n'est PAS une management command — il doit être lancé directement :
+```bash
+cd /home/z/my-project/repos/numeria-institute
+python3 scripts/seed_projectile_lab.py
+```
+Pour que `numeria_project.settings` soit importable depuis `scripts/`, le script ajoute `PROJECT_ROOT` (parent de `scripts/`) à `sys.path` avant `import django; django.setup()`. Le `DJANGO_SETTINGS_MODULE` est setté via `os.environ.setdefault`.
+
+### Idempotence — `update_or_create` + préservation de l'order
+
+Le script peut être ré-exécuté sans dupliquer les lignes. Stratégie :
+
+- **Module et leçon** : on appelle `filter().first()` pour détecter l'existence préalable. Si la ligne n'existe pas, on calcule `order = max(orders) + 1` via le helper `_next_order()` et on l'ajoute au `defaults` dict de `update_or_create`. Si la ligne existe déjà, on omet `order` des `defaults` afin de **préserver l'order existant** (sinon, `_next_order` se baserait sur `max(order)+1` qui inclurait le module lui-même et le décalerait à chaque exécution — bug subtil repéré pendant le mock-testing).
+- **InteractiveLab et LessonBlock** : `update_or_create` direct (l'`order` interne reste 0, il n'y a qu'un seul lab par leçon).
+- **Cleanup des blocs orphelins** : après l'upsert, on supprime les éventuels `LessonBlock` de type `interactive_lab` rattachés à la même leçon mais pointant vers un autre lab (cas de figure : renommage de `LAB_TITLE` entre deux exécutions).
+
+L'ensemble du seed est wrappé dans `@transaction.atomic` : si une étape échoue, toutes les modifications sont annulées.
+
+### Simulation code (Pyodide + matplotlib)
+
+```python
+def simulate(params):
+    v0 = params.get('v0', 30)
+    angle = params.get('angle', 45)
+    g = params.get('g', 9.81)
+    drag = params.get('drag', 0.0)
+    # ... alpha = radians(angle); vx0, vy0 = v0·cos/sin(alpha)
+    if drag < 0.001:
+        # Solution analytique : T = 2·vy0/g ; x(t) = vx0·t ; y(t) = vy0·t - 0.5·g·t²
+    else:
+        # Intégration d'Euler (dt=0.001) avec frottement quadratique :
+        # ax = -drag·v·vx ; ay = -g - drag·v·vy
+    # ... fig, ax = plt.subplots() ; ax.plot(...) + 3 markers (portée/flèche/temps)
+    return fig
+```
+
+- Le widget `interactive_lab_widget.html` wrappe déjà ce code avec les imports `matplotlib`/`numpy`/`io`/`base64` avant de l'exécuter dans Pyodide ; les réimporter dans `simulate` est inoffensif (idempotent).
+- La figure retournée est sérialisée en PNG base64 par le widget et affichée dans un `<img>`.
+- Les caractères unicode (`₀`, `α`, `°`, `é`, `è`) dans les labels/title matplotlib fonctionnent correctement (vérifié en exécutant le code avec numpy 2.1.3 + matplotlib 3.9.2).
+
+### Slider config (4 entrées)
+
+| name | label | min | max | step | default | unit |
+|------|-------|-----|-----|------|---------|------|
+| `v0` | Vitesse initiale | 5 | 60 | 0.5 | 30 | m/s |
+| `angle` | Angle de tir | 0 | 90 | 1 | 45 | ° |
+| `g` | Gravité | 1 | 25 | 0.1 | 9.81 | m/s² |
+| `drag` | Frottement | 0 | 0.05 | 0.001 | 0 | (sans unité) |
+
+Chaque entrée suit le schéma `{name, label, min, max, step, default, unit}` attendu par `interactive_lab_widget.html` (lecture via `|json_script` + `JSON.parse` côté JS).
+
+### Challenges adaptatifs (5 entrées)
+
+| id | question (extrait) | expected | tol | next_correct | next_wrong |
+|----|--------------------|----------|-----|--------------|------------|
+| `q1` | Portée pour v₀=20, α=45°, g=9.81, sans frottement | 40.78 m | 1.0 | `q2` | `q1b` |
+| `q1b` | Rappel : P = v₀²·sin(2α)/g. Avec v₀=20, α=45°, g=9.81 | 40.78 m | 2.0 | `q2` | `null` |
+| `q2` | Flèche (hauteur max) pour v₀=20, α=45°, g=9.81 | 10.19 m | 0.5 | `q3` | `q2b` |
+| `q2b` | Rappel : h = (v₀·sin α)²/(2g). Avec v₀=20, α=45°, g=9.81 | 10.19 m | 1.0 | `q3` | `null` |
+| `q3` | Portée approximative avec drag=0.01, v₀=30, α=45° | 75 m | 10.0 | `null` | `null` |
+
+Le graphe de branchage couvre tous les cas : 2 chemins "bon élève" (`q1 → q2 → q3`), 2 chemins "élève en difficulté" (`q1 → q1b → q2 → q2b → q3`), et un nœud terminal (`q3`). Le serveur `submit_lab_answer` (cf. `cours/views.py`) consulte `next_on_correct`/`next_on_wrong` pour avancer dans le graphe, avec fallback séquentiel si un id n'existe pas.
+
+### Gestion d'erreur
+
+Si le cours `mecanique-classique` n'existe pas en base, le script :
+1. Affiche un message d'erreur clair sur `stderr` ;
+2. Appelle `sys.exit(1)` pour signaler l'échec au shell (utile pour les CI/CD).
+
+## Vérifications effectuées
+
+1. **`ast.parse`** sur `scripts/seed_projectile_lab.py` → ✓ OK (aucun SyntaxError, fichier Python 3 valide).
+2. **Validation du `LAB_SIMULATION_CODE`** (2187 chars) :
+   - `ast.parse` → ✓ Python 3 valide ;
+   - définit bien `simulate(params)` → ✓ (vérifié via parcours AST) ;
+   - exécution réelle avec `numpy 2.1.3` + `matplotlib 3.9.2` → ✓ renvoie un objet `matplotlib.figure.Figure` ;
+   - la figure se sauvegarde en PNG valide (signature `\x89PNG\r\n\x1a\n` correcte, 25 KB) ;
+   - tous les cas limites des sliders testés : `(v0=5, angle=0)`, `(v0=5, angle=90)`, `(g=1)` (Lune), `(g=25)` (Jupiter), `(drag=0.05)` (max) → ✓ aucune erreur runtime.
+3. **Validation `LAB_SLIDER_CONFIG`** (4 entrées) : toutes les clés requises présentes (`name`, `label`, `min`, `max`, `step`, `default`, `unit`), `default ∈ [min, max]`, JSON-sérialisable → ✓.
+4. **Validation `LAB_CHALLENGES`** (5 entrées) : toutes les clés requises présentes (`id`, `question`, `expected_value`, `tolerance`, `next_on_correct`, `next_on_wrong`), `expected_value` numérique, `tolerance > 0`, tous les `next_on_*` non-null pointent vers un id existant, JSON-sérialisable → ✓.
+5. **Mock-test de la logique `seed()`** (Django + models stubbés via `types.ModuleType` + `types.SimpleNamespace`) :
+   - **Scénario 1** (cours vide, 1ère exécution) : crée 1 module (order=1), 1 leçon (order=1), 1 lab, 1 bloc — tous les champs attendus présents → ✓ ;
+   - **Scénario 2** (2e exécution sur même cours) : aucune duplication, PK stables, message "mis à jour", order préservé (1, 1) → ✓ idempotence ;
+   - **Scénario 3** (3e exécution) : order toujours stable — pas de dérive → ✓ bug de décalage d'order évité ;
+   - **Scénario 4** (cours avec modules pré-existants order=1, 5, 10) : nouveau module créé avec `order=11` (= max(10) + 1) ; re-run préserve `order=11` → ✓ ;
+   - **Scénario 5** (cours inexistant) : `sys.exit(1)` déclenché, message d'erreur sur stderr → ✓ ;
+   - **Scénario 6** (2 blocs lab orphelins pré-existants) : 1 bloc orphelin supprimé, 1 bloc conservé → ✓ cleanup fonctionnel.
+
+## Décisions de conception
+
+1. **Script standalone plutôt que management command** — la spec demandait explicitement `python3 scripts/seed_projectile_lab.py` (pas `python manage.py ...`). Le bootstrap Django est donc manuel (`sys.path.insert` + `os.environ.setdefault` + `django.setup()`). Cette approche est plus fragile qu'une management command (pas de discovery automatique du `DJANGO_SETTINGS_MODULE`), mais elle respecte la spec.
+2. **`order` figé à la création** — le bug subtil du `_next_order` qui se base sur `max(order)+1` (incluant le module lui-même sur les ré-exécutions) a été détecté pendant le mock-testing. Fix : on n'inclut `order` dans les `defaults` de `update_or_create` QUE lors de la première création (quand `filter().first()` renvoie `None`). Sur les mises à jour, on omet `order` pour préserver la valeur existante.
+3. **Cleanup des blocs orphelins** — un `update_or_create` sur `LessonBlock(course_lesson=lesson, block_type='interactive_lab')` réassignerait le FK `interactive_lab` d'un bloc existant vers le nouveau lab, laissant l'ancien lab orphelin (pas de bloc pointant vers lui). Pour éviter l'accumulation, on supprime les éventuels blocs `interactive_lab` en doublon sur la même leçon (en excluant le bloc qu'on vient d'upserter via `.exclude(id=block.id)`). Cette logique ne s'active que si l'utilisateur a renommé `LAB_TITLE` entre deux exécutions.
+4. **`InteractiveLab` extends `BaseExercise`** — le lab hérite des champs `course_lesson`, `formation_lesson`, `created_by`, `created_at`, `hint`, `explanation`, `max_attempts`, `order`, `is_active`. On sette explicitement `max_attempts=0` (illimité), `hint=''`, `explanation=''`, `order=0` (un seul lab par leçon), `is_active=True`. Le `course_lesson` est passé dans `update_or_create` pour le lookup (respect de la règle "exactly one of course_lesson/formation_lesson").
+5. **`LessonBlock.interactive_lab` FK** — utilisée avec `on_delete=CASCADE` (défini dans la migration `0004_interactive_lab`). La suppression du lab cascade la suppression du bloc (pas de bloc lab vide). Les `LabProgress` sont aussi CASCADE-deleted via le FK `lab` sur `LabProgress`.
+6. **Pas de `created_by`** — le script est lancé en CLI (pas de `request.user`). On laisse `created_by=None` (champ nullable). Si l'admin veut tracer qui a créé le lab, il peut le faire via l'interface admin.
+7. **`is_free_preview=True` sur la leçon** — permet aux étudiants non inscrits de voir la leçon (et la simulation) en aperçu. Les challenges nécessitent toutefois une authentification (`@login_required` sur `submit_lab_answer`). C'est un compromis raisonnable : la simulation est publique, la progression est privée.
+8. **Unicode dans les labels matplotlib** — restauré après hésitation (`v₀`, `α`, `°`, `é`, `è`). matplotlib gère l'UTF-8 nativement (vérifié), et le rendu est plus élégant qu'avec des substitutions ASCII (`v0`, `angle`, `deg`, `Portee`, `Fleche`). Le widget `interactive_lab_widget.html` échappe déjà le `simulation_code` via `|escapejs` côté template, donc pas de risque d'injection JS.
+9. **Marqueur "Temps de vol" ajouté** — la spec demandait "Affiche aussi la portée, la flèche, le temps de vol comme annotations". Le code original du spec ne montrait que 2 markers (portée, flèche). J'ai ajouté un 3e marker `(0, 0)` avec label `Temps de vol: {T:.2f} s` pour satisfaire explicitement cette exigence. La position `(0, 0)` est arbitraire (le temps de vol n'a pas de coordonnée 2D naturelle) — c'est juste un placeholder visuel pour la légende.
+
+## Suivis / limitations
+
+1. **Django non installé dans le sandbox de dev** — le script n'a pas pu être exécuté end-to-end contre une vraie DB. Le mock-test (Django stubbé) couvre la logique métier (idempotence, gestion d'order, cleanup, gestion d'erreur), mais pas l'interaction réelle avec PostgreSQL/SQLite. À exécuter en staging avant production.
+2. **Cours `mecanique-classique` non trouvé dans le dépôt** — aucune référence à ce slug n'apparaît dans le code source (seul `python-algorithmique-poo` est seedé via `seed_python_course.py`). Le script suppose que le cours a été créé par un autre moyen (admin panel, autre seed script non versionné, ou fixture JSON). Si ce n'est pas le cas, le script s'arrêtera proprement avec un message d'erreur clair (`sys.exit(1)`).
+3. **Server-side numeric re-evaluation manquant** — hérité du framework `QM-LAB-FRAMEWORK` : le client calcule `is_correct` à partir de `expected_value`/`tolerance` et l'envoie au serveur, qui ne re-vérifie pas. Un étudiant malveillant pourrait forger `is_correct=true` pour skipper les challenges. Patch prévu dans `submit_lab_answer` (cf. follow-up #1 de `QM-LAB-FRAMEWORK`).
+4. **Pas de test d'intégration navigateur** — le rendu Pyodide + matplotlib dans le widget `interactive_lab_widget.html` n'a pas été testé (pas de navigateur headless dans le sandbox). La chaîne `simulate(params)` → `fig.savefig(png)` → `<img src="data:image/png;base64,...">` a été validée individuellement côté Python, mais le collage JS n'a pas été vérifié.
+5. **Pas de gestion des versions du lab** — si le contenu pédagogique du lab doit évoluer (nouvelles questions, nouvelles tolerances), il faudra soit éditer le script et le ré-exécuter (ce qui met à jour le lab en place, en perdant l'historique), soit versionner via un champ `version` sur `InteractiveLab` (à ajouter au modèle si besoin).
+6. **Pas de multi-langue** — le lab est unilingue français. Si le cours `mecanique-classique` est traduit en anglais (via `locale/en/LC_MESSAGES/django.po`), les libellés du lab (instructions, questions, hints, explanations) ne seront pas traduits car stockés en DB. Pour une vraie i18n, il faudrait extraire ces chaînes dans des fichiers `.po` ou utiliser un champ `language` sur `InteractiveLab` avec un sélecteur côté UI.

@@ -1,0 +1,2002 @@
+     1→"""
+     2→Management command: seed_python_course
+     3→
+     4→Creates a complete Python course "De l'Algorithmique à la POO" with:
+     5→  - 5 modules
+     6→  - 15 lessons
+     7→  - ~50 text blocks (Markdown + LaTeX)
+     8→  - ~15 sandboxes (Python code)
+     9→  - ~20 MCQ exercises (3-4 choices each)
+    10→  - ~15 code exercises (with starter code, expected output, tests)
+    11→  - ~10 fill-in-the-blank exercises
+    12→  - ~10 true/false exercises
+    13→
+    14→Idempotent: if the course already exists (matched by slug), it is updated
+    15→in place rather than duplicated. Run with:
+    16→
+    17→    python manage.py seed_python_course
+    18→
+    19→The course is created in 'published' status so it's immediately visible
+    20→on the catalogue. Set --draft to keep it as a draft instead.
+    21→"""
+    22→from django.core.management.base import BaseCommand
+    23→from django.db import transaction
+    24→
+    25→from cours.models import (
+    26→    Course, CourseModule, CourseLesson,
+    27→    LessonBlock,
+    28→    CodeExercise, MCQExercise, MCQChoice,
+    29→    FillBlankExercise, TrueFalseExercise,
+    30→)
+    31→
+    32→
+    33→class Command(BaseCommand):
+    34→    help = 'Seed a complete Python course (Algorithmique → POO) with lessons, blocks, and exercises.'
+    35→
+    36→    def add_arguments(self, parser):
+    37→        parser.add_argument(
+    38→            '--draft', action='store_true',
+    39→            help='Create the course in draft status (default: published).',
+    40→        )
+    41→        parser.add_argument(
+    42→            '--clean', action='store_true',
+    43→            help='Delete the existing course (and all its children) before re-creating.',
+    44→        )
+    45→
+    46→    @transaction.atomic
+    47→    def handle(self, *args, **options):
+    48→        slug = 'python-algorithmique-poo'
+    49→        status = 'draft' if options['draft'] else 'published'
+    50→
+    51→        if options['clean']:
+    52→            deleted, _ = Course.objects.filter(slug=slug).delete()
+    53→            if deleted:
+    54→                self.stdout.write(self.style.WARNING(f'Deleted existing course ({deleted} related rows).'))
+    55→
+    56→        course, created = Course.objects.get_or_create(
+    57→            slug=slug,
+    58→            defaults={
+    59→                'title': 'Python : de l\'Algorithmique à la POO',
+    60→                'description': (
+    61→                    "Un parcours complet pour apprendre Python depuis les premiers "
+    62→                    "concepts algorithmiques jusqu'à la programmation orientée objet. "
+    63→                    "Pensé pour les apprenants africains et francophones : exemples "
+    64→                    "concrets, exercices interactifs, et sandbox Python intégrée."
+    65→                ),
+    66→                'short_description': (
+    67→                    "Apprends Python de zéro à la POO : algorithmique, structures de "
+    68→                    "données, récursivité, tri, classes, héritage."
+    69→                ),
+    70→                'category': 'python',
+    71→                'level': 'debutant',
+    72→                'language': 'fr',
+    73→                'price': 0,
+    74→                'is_free': True,
+    75→                'status': status,
+    76→                'estimated_hours': 40,
+    77→            },
+    78→        )
+    79→        if not created:
+    80→            self.stdout.write(self.style.WARNING(f'Course "{course.title}" already exists — updating.'))
+    81→            course.status = status
+    82→            course.save(update_fields=['status'])
+    83→        else:
+    84→            self.stdout.write(self.style.SUCCESS(f'Created course "{course.title}".'))
+    85→
+    86→        # Build each module + lessons + blocks
+    87→        for module_data in COURSE_STRUCTURE:
+    88→            module = self.upsert_module(course, module_data)
+    89→            for lesson_data in module_data['lessons']:
+    90→                lesson = self.upsert_lesson(course, module, lesson_data)
+    91→                self.upsert_blocks(lesson, lesson_data['blocks'])
+    92→
+    93→        self.stdout.write(self.style.SUCCESS(
+    94→            f'\n✓ Course seeded: {course.title}\n'
+    95→            f'  Modules: {CourseModule.objects.filter(course=course).count()}\n'
+    96→            f'  Lessons: {CourseLesson.objects.filter(course=course).count()}\n'
+    97→            f'  Blocks:  {LessonBlock.objects.filter(course_lesson__course=course).count()}\n'
+    98→            f'  Status:  {course.status}\n'
+    99→            f'  URL:     /cours/{course.id}/'
+   100→        ))
+   101→
+   102→    def upsert_module(self, course, data):
+   103→        module, _ = CourseModule.objects.get_or_create(
+   104→            course=course, title=data['title'],
+   105→            defaults={'description': data.get('description', ''), 'order': data['order'], 'is_active': True},
+   106→        )
+   107→        return module
+   108→
+   109→    def upsert_lesson(self, course, module, data):
+   110→        slug = data.get('slug') or data['title'].lower().replace(' ', '-').replace('é', 'e').replace('à', 'a').replace('è', 'e').replace('û', 'u').replace("'", '-')
+   111→        lesson, _ = CourseLesson.objects.get_or_create(
+   112→            course=course, module=module, title=data['title'],
+   113→            defaults={
+   114→                'slug': slug,
+   115→                'order': data['order'],
+   116→                'estimated_minutes': data.get('minutes', 20),
+   117→                'is_free_preview': data.get('free_preview', True),
+   118→                'is_active': True,
+   119→            },
+   120→        )
+   121→        return lesson
+   122→
+   123→    def upsert_blocks(self, lesson, blocks_data):
+   124→        # Clear existing blocks for this lesson (so re-running updates content cleanly)
+   125→        LessonBlock.objects.filter(course_lesson=lesson).delete()
+   126→        for idx, block_data in enumerate(blocks_data):
+   127→            self.create_block(lesson, block_data, idx)
+   128→
+   129→    def create_block(self, lesson, data, idx):
+   130→        btype = data['type']
+   131→        block = LessonBlock(course_lesson=lesson, block_type=btype, order=idx)
+   132→        if btype == 'text':
+   133→            block.text_content = data['content']
+   134→            block.save()
+   135→        elif btype == 'sandbox':
+   136→            block.sandbox_title = data.get('title', 'Essaie toi-même')
+   137→            block.sandbox_initial_code = data.get('code', '# Écris ton code ici\n')
+   138→            block.save()
+   139→        elif btype == 'mcq':
+   140→            ex = self.create_mcq(lesson, data)
+   141→            block.mcq_exercise = ex
+   142→            block.save()
+   143→        elif btype == 'code_exercise':
+   144→            ex = self.create_code_exercise(lesson, data)
+   145→            block.code_exercise = ex
+   146→            block.save()
+   147→        elif btype == 'fill_blank':
+   148→            ex = self.create_fill_blank(lesson, data)
+   149→            block.fill_blank = ex
+   150→            block.save()
+   151→        elif btype == 'true_false':
+   152→            ex = self.create_true_false(lesson, data)
+   153→            block.true_false = ex
+   154→            block.save()
+   155→        else:
+   156→            # Unsupported type for this seeder — skip silently
+   157→            return
+   158→
+   159→    # ---------- Exercise factories ----------
+   160→
+   161→    def create_mcq(self, lesson, data):
+   162→        ex = MCQExercise.objects.create(
+   163→            course_lesson=lesson,
+   164→            title=data['title'],
+   165→            question=data['question'],
+   166→            instructions=data.get('instructions', ''),
+   167→            difficulty=data.get('difficulty', 'easy'),
+   168→            points=data.get('points', 5),
+   169→            hint=data.get('hint', ''),
+   170→            explanation=data.get('explanation', ''),
+   171→            order=data.get('order', 0),
+   172→            allow_multiple_correct=data.get('multiple', False),
+   173→            shuffle_choices=True,
+   174→        )
+   175→        for i, choice in enumerate(data['choices']):
+   176→            MCQChoice.objects.create(
+   177→                exercise=ex,
+   178→                text=choice['text'],
+   179→                is_correct=choice['correct'],
+   180→                feedback=choice.get('feedback', ''),
+   181→                order=i,
+   182→            )
+   183→        return ex
+   184→
+   185→    def create_code_exercise(self, lesson, data):
+   186→        return CodeExercise.objects.create(
+   187→            course_lesson=lesson,
+   188→            title=data['title'],
+   189→            instructions=data.get('instructions', ''),
+   190→            difficulty=data.get('difficulty', 'easy'),
+   191→            points=data.get('points', 10),
+   192→            hint=data.get('hint', ''),
+   193→            explanation=data.get('explanation', ''),
+   194→            order=data.get('order', 0),
+   195→            starter_code=data.get('starter', '# Écris ton code ici\n'),
+   196→            solution_code=data.get('solution', ''),
+   197→            expected_output=data.get('expected_output', ''),
+   198→            test_code=data.get('test_code', ''),
+   199→            evaluation_mode=data.get('eval_mode', 'exact'),
+   200→        )
+   201→
+   202→    def create_fill_blank(self, lesson, data):
+   203→        return FillBlankExercise.objects.create(
+   204→            course_lesson=lesson,
+   205→            title=data['title'],
+   206→            instructions=data.get('instructions', ''),
+   207→            difficulty=data.get('difficulty', 'easy'),
+   208→            points=data.get('points', 5),
+   209→            hint=data.get('hint', ''),
+   210→            explanation=data.get('explanation', ''),
+   211→            order=data.get('order', 0),
+   212→            text_with_blanks=data['text_with_blanks'],
+   213→            answers=data['answers'],
+   214→            case_sensitive=data.get('case_sensitive', False),
+   215→        )
+   216→
+   217→    def create_true_false(self, lesson, data):
+   218→        return TrueFalseExercise.objects.create(
+   219→            course_lesson=lesson,
+   220→            title=data['title'],
+   221→            instructions=data.get('instructions', ''),
+   222→            difficulty=data.get('difficulty', 'easy'),
+   223→            points=data.get('points', 6),
+   224→            hint=data.get('hint', ''),
+   225→            explanation=data.get('explanation', ''),
+   226→            order=data.get('order', 0),
+   227→            statements=data['statements'],
+   228→            points_per_statement=data.get('points_per_statement', 2),
+   229→        )
+   230→
+   231→
+   232→# =============================================================================
+   233→# COURSE STRUCTURE — all content in French
+   234→# =============================================================================
+   235→
+   236→COURSE_STRUCTURE = [
+   237→    # ──────────────────────────────────────────────────────────────────────
+   238→    # MODULE 1 — Introduction à Python
+   239→    # ──────────────────────────────────────────────────────────────────────
+   240→    {
+   241→        'order': 0,
+   242→        'title': 'Introduction à Python',
+   243→        'description': "Découvre Python, installe ton environnement et écris tes premiers programmes.",
+   244→        'lessons': [
+   245→            {
+   246→                'order': 0,
+   247→                'title': 'Bienvenue en Python',
+   248→                'slug': 'bienvenue-python',
+   249→                'minutes': 15,
+   250→                'free_preview': True,
+   251→                'blocks': [
+   252→                    {
+   253→                        'type': 'text',
+   254→                        'content': """# Bienvenue en Python ! 🐍
+   255→
+   256→Python est un langage de programmation **simple, lisible et puissant**. Il est utilisé partout : intelligence artificielle, sites web, sciences, automatisation, jeux.
+   257→
+   258→## Pourquoi apprendre Python ?
+   259→
+   260→- **Syntaxe claire** : proche de l'anglais, facile à lire
+   261→- **Polyvalent** : web, data, IA, scripts, robotique
+   262→- **Communauté énorme** : des millions de tutoriels et de bibliothèques
+   263→- **Demande forte** sur le marché du travail en Afrique et à l'international
+   264→
+   265→## Ton premier programme
+   266→
+   267→Traditionnellement, le premier programme qu'on écrit dans un nouveau langage affiche « Hello, World! ». En Python, c'est une seule ligne :
+   268→
+   269→```python
+   270→print("Hello, World!")
+   271→```
+   272→
+   273→Le mot `print` est une **fonction**. Elle affiche à l'écran ce qu'on lui passe entre parenthèses. Les guillemets `"..."` délimitent une **chaîne de caractères** (du texte).
+   274→
+   275→## Dans ce cours
+   276→
+   277→Nous allons partir de zéro et arriver jusqu'à la **programmation orientée objet**. Le parcours :
+   278→
+   279→1. **Module 1** — Introduction (variables, types, opérateurs)
+   280→2. **Module 2** — Algorithmique (conditions, boucles, fonctions)
+   281→3. **Module 3** — Structures de données (listes, tuples, dictionnaires)
+   282→4. **Module 4** — Algorithmique avancée (récursivité, tri, complexité)
+   283→5. **Module 5** — POO (classes, héritage, polymorphisme)
+   284→
+   285→Chaque leçon contient :
+   286→- Un **cours théorique** avec des exemples
+   287→- Une **sandbox** pour tester le code en direct
+   288→- Des **exercices** (QCM, code à écrire, textes à trous)
+   289→
+   290→Prêt ? C'est parti ! 🚀""",
+   291→                    },
+   292→                    {
+   293→                        'type': 'sandbox',
+   294→                        'title': 'Ton premier programme',
+   295→                        'code': '# Lance ce programme en cliquant sur Run\nprint("Hello, World!")\nprint("Je m\'appelle ...")\nprint("J\'apprends Python avec Numeria Institute")\n',
+   296→                    },
+   297→                    {
+   298→                        'type': 'mcq',
+   299→                        'title': 'Que fait la fonction print() ?',
+   300→                        'question': "Que fait l'instruction `print(\"Hello\")` en Python ?",
+   301→                        'explanation': "print() est une fonction intégrée qui affiche son argument dans la console.",
+   302→                        'choices': [
+   303→                            {'text': 'Elle affiche "Hello" à l\'écran', 'correct': True, 'feedback': 'Exact ! print() écrit dans la sortie standard.'},
+   304→                            {'text': 'Elle crée une variable nommée Hello', 'correct': False, 'feedback': 'Non, pour créer une variable on écrit juste `Hello = ...` sans print().'},
+   305→                            {'text': 'Elle demande à l\'utilisateur de taper Hello', 'correct': False, 'feedback': 'Non, c\'est input() qui demande à l\'utilisateur.'},
+   306→                            {'text': 'Elle efface l\'écran', 'correct': False, 'feedback': 'Non, print() n\'efface rien.'},
+   307→                        ],
+   308→                    },
+   309→                    {
+   310→                        'type': 'true_false',
+   311→                        'title': 'Vrai ou Faux ? Python',
+   312→                        'instructions': 'Indique si chaque affirmation est vraie ou fausse.',
+   313→                        'explanation': 'Python a été créé par Guido van Rossum en 1991. Il est gratuit et open-source.',
+   314→                        'statements': [
+   315→                            {'statement': 'Python a été créé par Guido van Rossum.', 'is_true': True},
+   316→                            {'statement': 'Python est un langage payant.', 'is_true': False},
+   317→                            {'statement': 'Python est utilisé en intelligence artificielle.', 'is_true': True},
+   318→                            {'statement': 'Python ne peut fonctionner que sur Windows.', 'is_true': False},
+   319→                        ],
+   320→                    },
+   321→                ],
+   322→            },
+   323→            {
+   324→                'order': 1,
+   325→                'title': 'Variables et types de base',
+   326→                'slug': 'variables-types',
+   327→                'minutes': 25,
+   328→                'free_preview': True,
+   329→                'blocks': [
+   330→                    {
+   331→                        'type': 'text',
+   332→                        'content': """# Variables et types de base
+   333→
+   334→## Qu'est-ce qu'une variable ?
+   335→
+   336→Une **variable** est une boîte nommée qui contient une valeur. En Python, on crée une variable en lui assignant une valeur avec le signe `=` :
+   337→
+   338→```python
+   339→age = 25
+   340→nom = "Awa"
+   341→taille = 1.68
+   342→est_majeur = True
+   343→```
+   344→
+   345→## Les types fondamentaux
+   346→
+   347→Python possède quatre types de base que tu utiliseras tout le temps :
+   348→
+   349→| Type | Exemple | Description |
+   350→|------|---------|-------------|
+   351→| `int` | `25`, `-7`, `0` | Nombres entiers |
+   352→| `float` | `1.68`, `3.14`, `-0.5` | Nombres à virgule |
+   353→| `str` | `"Awa"`, `'Bonjour'` | Chaînes de caractères (texte) |
+   354→| `bool` | `True`, `False` | Booléens (vrai / faux) |
+   355→
+   356→## Connaître le type d'une valeur
+   357→
+   358→La fonction `type()` renvoie le type d'une valeur :
+   359→
+   360→```python
+   361→print(type(25))        # <class 'int'>
+   362→print(type("Awa"))     # <class 'str'>
+   363→print(type(1.68))      # <class 'float'>
+   364→print(type(True))      # <class 'bool'>
+   365→```
+   366→
+   367→## Règles de nommage
+   368→
+   369→- Une variable commence par une **lettre** ou un `_`
+   370→- Pas d'espaces, pas de caractères spéciaux (`+`, `-`, `@`...)
+   371→- Sensible à la casse : `age` ≠ `Age` ≠ `AGE`
+   372→- On utilise la convention **snake_case** : `mon_age`, `prix_total`
+   373→
+   374→```python
+   375→# ✅ Bon
+   376→mon_age = 25
+   377→prix_total = 1500
+   378→
+   379→# ❌ Mauvais
+   380→mon-age = 25      # tiret interdit
+   381→2e_variable = 5   # commence par un chiffre
+   382→```
+   383→
+   384→## Affectation multiple
+   385→
+   386→Python permet d'assigner plusieurs variables en une ligne :
+   387→
+   388→```python
+   389→x, y, z = 1, 2, 3
+   390→print(x, y, z)   # 1 2 3
+   391→
+   392→a = b = c = 0
+   393→print(a, b, c)   # 0 0 0
+   394→```
+   395→
+   396→## Modification d'une variable
+   397→
+   398→On peut modifier la valeur d'une variable en la réassignant :
+   399→
+   400→```python
+   401→compteur = 0
+   402→compteur = 1
+   403→compteur = compteur + 1   # maintenant compteur = 2
+   404→compteur += 1             # raccourci : compteur = 3
+   405→```
+   406→
+   407→Les opérateurs `+=`, `-=`, `*=`, `/=` sont des raccourcis très utiles.""",
+   408→                    },
+   409→                    {
+   410→                        'type': 'sandbox',
+   411→                        'title': 'Joue avec les variables',
+   412→                        'code': '# Crée des variables de différents types\nage = 20\nnom = "Kofi"\ntaille = 1.75\nest_etudiant = True\n\n# Affiche-les\nprint("Nom :", nom)\nprint("Age :", age)\nprint("Taille :", taille)\nprint("Etudiant ?", est_etudiant)\n\n# Vérifie leurs types\nprint(type(age))\nprint(type(nom))\nprint(type(taille))\nprint(type(est_etudiant))\n',
+   413→                    },
+   414→                    {
+   415→                        'type': 'mcq',
+   416→                        'title': 'Types de base',
+   417→                        'question': 'Quel est le type de la valeur `3.14` en Python ?',
+   418→                        'explanation': "Les nombres à virgule sont du type float (flottant).",
+   419→                        'choices': [
+   420→                            {'text': 'int', 'correct': False, 'feedback': 'int est pour les entiers (sans virgule).'},
+   421→                            {'text': 'float', 'correct': True, 'feedback': 'Bravo ! 3.14 est un nombre à virgule flottante.'},
+   422→                            {'text': 'str', 'correct': False, 'feedback': 'str est pour le texte. 3.14 sans guillemets est un nombre.'},
+   423→                            {'text': 'bool', 'correct': False, 'feedback': 'bool ne contient que True ou False.'},
+   424→                        ],
+   425→                    },
+   426→                    {
+   427→                        'type': 'mcq',
+   428→                        'title': 'Nommage de variables',
+   429→                        'question': "Lequel de ces noms de variable est VALIDE en Python ?",
+   430→                        'explanation': "Les noms de variables ne peuvent pas commencer par un chiffre, contenir un tiret ni un espace.",
+   431→                        'choices': [
+   432→                            {'text': '2e_variable', 'correct': False, 'feedback': 'Un nom ne peut pas commencer par un chiffre.'},
+   433→                            {'text': 'mon-age', 'correct': False, 'feedback': 'Le tiret - est interdit (utilise _).'},
+   434→                            {'text': 'prix_total', 'correct': True, 'feedback': 'Parfait ! snake_case est la convention Python.'},
+   435→                            {'text': 'mon age', 'correct': False, 'feedback': 'Pas d\'espaces dans un nom de variable.'},
+   436→                        ],
+   437→                    },
+   438→                    {
+   439→                        'type': 'fill_blank',
+   440→                        'title': 'Complète le code',
+   441→                        'instructions': 'Complète les parties manquantes du code.',
+   442→                        'text_with_blanks': "nom = {{blank_1}}\nage = {{blank_2}}\nprint({{blank_3}})",
+   443→                        'answers': {
+   444→                            'blank_1': ['"Awa"', "'Awa'"],
+   445→                            'blank_2': ['20'],
+   446→                            'blank_3': ['nom, age', 'nom,age'],
+   447→                        },
+   448→                        'explanation': 'On utilise des guillemets pour le texte, un nombre sans guillemets pour age, et print(nom, age) affiche les deux variables.',
+   449→                    },
+   450→                    {
+   451→                        'type': 'code_exercise',
+   452→                        'title': 'Crée tes premières variables',
+   453→                        'instructions': """Crée trois variables :
+   454→- `nom` qui contient ton prénom (texte)
+   455→- `age` qui contient ton âge (entier)
+   456→- `taille` qui contient ta taille en mètres (flottant)
+   457→
+   458→Puis affiche-les chacun sur une ligne avec `print()`.""",
+   459→                        'difficulty': 'easy',
+   460→                        'points': 10,
+   461→                        'hint': 'Utilise print() pour chaque variable.',
+   462→                        'explanation': 'On crée les trois variables avec leurs types, puis on les affiche.',
+   463→                        'starter': '# Crée tes variables ici\n\n\n# Affiche-les\n\n',
+   464→                        'solution': 'nom = "Awa"\nage = 20\ntaille = 1.70\nprint(nom)\nprint(age)\nprint(taille)\n',
+   465→                        'expected_output': 'Awa\n20\n1.7\n',
+   466→                        'eval_mode': 'contains',
+   467→                    },
+   468→                ],
+   469→            },
+   470→            {
+   471→                'order': 2,
+   472→                'title': 'Opérateurs et expressions',
+   473→                'slug': 'operateurs-expressions',
+   474→                'minutes': 25,
+   475→                'free_preview': True,
+   476→                'blocks': [
+   477→                    {
+   478→                        'type': 'text',
+   479→                        'content': """# Opérateurs et expressions
+   480→
+   481→## Opérateurs arithmétiques
+   482→
+   483→Python dispose des opérateurs mathématiques classiques :
+   484→
+   485→| Opérateur | Description | Exemple | Résultat |
+   486→|-----------|-------------|---------|----------|
+   487→| `+` | Addition | `5 + 3` | `8` |
+   488→| `-` | Soustraction | `5 - 3` | `2` |
+   489→| `*` | Multiplication | `5 * 3` | `15` |
+   490→| `/` | Division (toujours float) | `10 / 3` | `3.333...` |
+   491→| `//` | Division entière | `10 // 3` | `3` |
+   492→| `%` | Modulo (reste) | `10 % 3` | `1` |
+   493→| `**` | Puissance | `2 ** 3` | `8` |
+   494→
+   495→```python
+   496→print(7 + 2)    # 9
+   497→print(7 / 2)    # 3.5  (toujours un float)
+   498→print(7 // 2)   # 3    (quotient entier)
+   499→print(7 % 2)    # 1    (reste)
+   500→print(2 ** 10)  # 1024 (2 puissance 10)
+   501→```
+   502→
+   503→## Opérateurs de comparaison
+   504→
+   505→Ils renvoient un booléen `True` ou `False` :
+   506→
+   507→| Opérateur | Signification | Exemple |
+   508→|-----------|---------------|---------|
+   509→| `==` | Égal à | `5 == 5` → `True` |
+   510→| `!=` | Différent de | `5 != 3` → `True` |
+   511→| `<` | Strictement inférieur | `3 < 5` → `True` |
+   512→| `>` | Strictement supérieur | `5 > 3` → `True` |
+   513→| `<=` | Inférieur ou égal | `5 <= 5` → `True` |
+   514→| `>=` | Supérieur ou égal | `4 >= 5` → `False` |
+   515→
+   516→⚠ **Attention** : `=` (affectation) et `==` (comparaison) sont différents !
+   517→
+   518→## Opérateurs logiques
+   519→
+   520→Python possède trois opérateurs logiques :
+   521→
+   522→| Opérateur | Description | Exemple |
+   523→|-----------|-------------|---------|
+   524→| `and` | ET (les deux vrais) | `True and False` → `False` |
+   525→| `or` | OU (au moins un vrai) | `True or False` → `True` |
+   526→| `not` | NON (inverse) | `not True` → `False` |
+   527→
+   528→```python
+   529→age = 20
+   530→permis = True
+   531→print(age >= 18 and permis)   # True — peut conduire
+   532→print(age < 18 or not permis) # False
+   533→```
+   534→
+   535→## Priorité des opérateurs
+   536→
+   537→Comme en mathématiques, `*` est prioritaire sur `+` :
+   538→
+   539→```python
+   540→print(2 + 3 * 4)   # 14, pas 20  (3*4=12, puis 2+12)
+   541→print((2 + 3) * 4) # 20  (parenthèses d'abord)
+   542→```
+   543→
+   544→Quand tu as un doute, **mets des parenthèses** — c'est plus lisible et plus sûr.
+   545→
+   546→## Opérateurs sur les chaînes
+   547→
+   548→Le `+` concatène (assemble) deux chaînes, le `*` répète :
+   549→
+   550→```python
+   551→prenom = "Awa"
+   552→nom = "Diallo"
+   553→print(prenom + " " + nom)   # "Awa Diallo"
+   554→print("Abc" * 3)             # "AbcAbcAbc"
+   555→```""",
+   556→                    },
+   557→                    {
+   558→                        'type': 'sandbox',
+   559→                        'title': 'Calcule en direct',
+   560→                        'code': '# Teste les différents opérateurs\nprint("Addition :", 5 + 3)\nprint("Division :", 10 / 3)\nprint("Division entiere :", 10 // 3)\nprint("Modulo :", 10 % 3)\nprint("Puissance :", 2 ** 8)\nprint()\n\n# Comparaisons\nprint("5 == 5 ?", 5 == 5)\nprint("5 > 7 ?", 5 > 7)\nprint()\n\n# Logique\nage = 20\nprint("Majeur ?", age >= 18)\nprint("Mineur ou 25 ans ?", age < 18 or age == 25)\n',
+   561→                    },
+   562→                    {
+   563→                        'type': 'mcq',
+   564→                        'title': 'Modulo',
+   565→                        'question': 'Que vaut `17 % 5` en Python ?',
+   566→                        'explanation': "Le modulo % renvoie le reste de la division entière. 17 = 5*3 + 2, donc 17 % 5 = 2.",
+   567→                        'choices': [
+   568→                            {'text': '3', 'correct': False, 'feedback': '3 est le quotient (17 // 5), pas le reste.'},
+   569→                            {'text': '2', 'correct': True, 'feedback': 'Bravo ! 17 = 5*3 + 2, le reste est 2.'},
+   570→                            {'text': '3.4', 'correct': False, 'feedback': 'C\'est le résultat de 17 / 5 (division normale).'},
+   571→                            {'text': '85', 'correct': False, 'feedback': 'C\'est 17 * 5.'},
+   572→                        ],
+   573→                    },
+   574→                    {
+   575→                        'type': 'mcq',
+   576→                        'title': 'Priorité des opérateurs',
+   577→                        'question': 'Que vaut `2 + 3 * 4` ?',
+   578→                        'explanation': "La multiplication est prioritaire sur l'addition : 3*4=12, puis 2+12=14.",
+   579→                        'choices': [
+   580→                            {'text': '20', 'correct': False, 'feedback': 'Tu as fait (2+3)*4 — mais * est prioritaire sans parenthèses.'},
+   581→                            {'text': '14', 'correct': True, 'feedback': 'Exact ! 3*4=12, puis 2+12=14.'},
+   582→                            {'text': '24', 'correct': False, 'feedback': 'Non, ce n\'est pas 2*3*4.'},
+   583→                            {'text': '11', 'correct': False, 'feedback': 'Tu as sans doute oublié la priorité de *.'},
+   584→                        ],
+   585→                    },
+   586→                    {
+   587→                        'type': 'code_exercise',
+   588→                        'title': 'Calcul de moyenne',
+   589→                        'instructions': """Trois élèves ont eu les notes suivantes :
+   590→- Awa : 14
+   591→- Kofi : 17
+   592→- Aya : 12
+   593→
+   594→Calcule leur **moyenne** (somme divisée par 3) et affiche le résultat avec `print()`.""",
+   595→                        'difficulty': 'easy',
+   596→                        'points': 10,
+   597→                        'hint': 'moyenne = (14 + 17 + 12) / 3',
+   598→                        'explanation': 'On additionne les trois notes puis on divise par le nombre d\'élèves.',
+   599→                        'starter': '# Calcule la moyenne\n\n',
+   600→                        'solution': 'note1 = 14\nnote2 = 17\nnote3 = 12\nmoyenne = (note1 + note2 + note3) / 3\nprint(moyenne)\n',
+   601→                        'expected_output': '14.333333333333334\n',
+   602→                        'eval_mode': 'contains',
+   603→                    },
+   604→                    {
+   605→                        'type': 'true_false',
+   606→                        'title': 'Vrai ou Faux ? Opérateurs',
+   607→                        'instructions': 'Indique si chaque affirmation est vraie ou fausse.',
+   608→                        'explanation': "Le / donne toujours un float (même 6/2 = 3.0). Le // donne un entier.",
+   609→                        'statements': [
+   610→                            {'statement': "L'expression 6 / 2 donne 3.0", 'is_true': True},
+   611→                            {'statement': "L'expression 7 // 2 donne 3.5", 'is_true': False},
+   612→                            {'statement': "L'expression 2 ** 3 donne 8", 'is_true': True},
+   613→                            {'statement': "L'expression 5 == 5 donne False", 'is_true': False},
+   614→                        ],
+   615→                    },
+   616→                ],
+   617→            },
+   618→        ],
+   619→    },
+   620→
+   621→    # ──────────────────────────────────────────────────────────────────────
+   622→    # MODULE 2 — Algorithmique : les bases
+   623→    # ──────────────────────────────────────────────────────────────────────
+   624→    {
+   625→        'order': 1,
+   626→        'title': 'Algorithmique : les bases',
+   627→        'description': "Conditions, boucles et fonctions : les fondations de tout programme.",
+   628→        'lessons': [
+   629→            {
+   630→                'order': 0,
+   631→                'title': 'Conditions (if / elif / else)',
+   632→                'slug': 'conditions-if-elif-else',
+   633→                'minutes': 30,
+   634→                'free_preview': True,
+   635→                'blocks': [
+   636→                    {
+   637→                        'type': 'text',
+   638→                        'content': """# Conditions : if / elif / else
+   639→
+   640→## Qu'est-ce qu'une condition ?
+   641→
+   642→Une **condition** permet à ton programme de prendre des décisions : exécuter un bloc de code seulement si une certaine situation est vraie.
+   643→
+   644→## Syntaxe de base
+   645→
+   646→```python
+   647→if condition:
+   648→    # code exécuté si la condition est True
+   649→    print("La condition est vraie")
+   650→```
+   651→
+   652→⚠ **Trois choses importantes** :
+   653→1. La ligne `if` se termine par **`:`** (deux points)
+   654→2. Le bloc indenté (4 espaces) est exécuté si la condition est vraie
+   655→3. L'indentation est **obligatoire** en Python — c'est elle qui délimite les blocs
+   656→
+   657→## if / else
+   658→
+   659→```python
+   660→age = 20
+   661→if age >= 18:
+   662→    print("Tu es majeur")
+   663→else:
+   664→    print("Tu es mineur")
+   665→```
+   666→
+   667→## if / elif / else
+   668→
+   669→`elif` (= "else if") permet de tester plusieurs cas :
+   670→
+   671→```python
+   672→note = 14
+   673→
+   674→if note >= 16:
+   675→    print("Très bien")
+   676→elif note >= 14:
+   677→    print("Bien")
+   678→elif note >= 12:
+   679→    print("Assez bien")
+   680→elif note >= 10:
+   681→    print("Passable")
+   682→else:
+   683→    print("Insuffisant")
+   684→```
+   685→
+   686→Les conditions sont évaluées **dans l'ordre**. Dès qu'une est vraie, le bloc correspondant est exécuté et on sort.
+   687→
+   688→## Conditions composées
+   689→
+   690→On combine avec `and`, `or`, `not` :
+   691→
+   692→```python
+   693→age = 25
+   694→permis = True
+   695→
+   696→if age >= 18 and permis:
+   697→    print("Tu peux conduire")
+   698→else:
+   699→    print("Tu ne peux pas conduire")
+   700→```
+   701→
+   702→## Imbrication de conditions
+   703→
+   704→On peut imbriquer les `if` :
+   705→
+   706→```python
+   707→age = 20
+   708→permis = True
+   709→
+   710→if age >= 18:
+   711→    if permis:
+   712→        print("Tu peux conduire")
+   713→    else:
+   714→        print("Passe ton permis d'abord")
+   715→else:
+   716→    print("Tu es trop jeune")
+   717→```
+   718→
+   719→## Piège fréquent : `=` vs `==`
+   720→
+   721→```python
+   722→# ❌ FAUX — c'est une affectation, pas une comparaison
+   723→if age = 18:  # SyntaxError
+   724→
+   725→# ✅ CORRECT — == compare
+   726→if age == 18:
+   727→    print("Tu as pile 18 ans")
+   728→```""",
+   729→                    },
+   730→                    {
+   731→                        'type': 'sandbox',
+   732→                        'title': 'Joue avec les conditions',
+   733→                        'code': '# Modifie age et observe le résultat\nage = 17\n\nif age >= 18:\n    print("Tu es majeur")\n    print("Tu peux voter")\nelse:\n    print("Tu es mineur")\n    print("Attends encore", 18 - age, "ans")\n\nprint()  # ligne vide\n\n# Plusieurs cas\nnote = 13\nif note >= 16:\n    print("Très bien")\nelif note >= 14:\n    print("Bien")\nelif note >= 12:\n    print("Assez bien")\nelse:\n    print("À améliorer")\n',
+   734→                    },
+   735→                    {
+   736→                        'type': 'mcq',
+   737→                        'title': 'Indentation',
+   738→                        'question': "Que se passe-t-il si on oublie l'indentation après un `if` ?",
+   739→                        'explanation': "Python utilise l'indentation pour définir les blocs. Sans indentation, c'est une erreur de syntaxe.",
+   740→                        'choices': [
+   741→                            {'text': 'Le code marche quand même', 'correct': False, 'feedback': 'Non, Python refuse de lancer le programme.'},
+   742→                            {'text': 'Python lève une IndentationError', 'correct': True, 'feedback': 'Exact ! L\'indentation est obligatoire en Python.'},
+   743→                            {'text': 'Le if est ignoré', 'correct': False, 'feedback': 'Non, c\'est pire : le programme ne se lance pas.'},
+   744→                            {'text': 'Le code est exécuté deux fois', 'correct': False, 'feedback': 'Non, aucune raison.'},
+   745→                        ],
+   746→                    },
+   747→                    {
+   748→                        'type': 'mcq',
+   749→                        'title': 'elif vs if',
+   750→                        'question': "Quelle est la différence entre `if / elif / else` et plusieurs `if` successifs ?",
+   751→                        'explanation': "Avec if/elif/else, dès qu'une condition est vraie on sort. Avec plusieurs if, toutes les conditions sont testées.",
+   752→                        'choices': [
+   753→                            {'text': 'Aucune différence', 'correct': False, 'feedback': 'Si, il y en a une importante.'},
+   754→                            {'text': 'if/elif/else sort dès qu\'une condition est vraie ; plusieurs if testent tout', 'correct': True, 'feedback': 'Bravo ! C\'est la différence clé.'},
+   755→                            {'text': 'Plusieurs if sont plus rapides', 'correct': False, 'feedback': 'Non, et ce n\'est pas la bonne réponse.'},
+   756→                            {'text': 'elif ne peut être utilisé qu\'une fois', 'correct': False, 'feedback': 'On peut utiliser autant de elif qu\'on veut.'},
+   757→                        ],
+   758→                    },
+   759→                    {
+   760→                        'type': 'code_exercise',
+   761→                        'title': 'Majorité',
+   762→                        'instructions': """Demande l'âge de l'utilisateur avec `age = int(input("Ton âge ? "))` puis :
+   763→- Si `age >= 18` : affiche "Tu es majeur"
+   764→- Sinon : affiche "Tu es mineur, il te reste X ans" où X est le nombre d'années avant 18
+   765→
+   766→(Pour tester, tu peux remplacer le `input()` par une valeur fixe comme `age = 15`.)""",
+   767→                        'difficulty': 'easy',
+   768→                        'points': 10,
+   769→                        'hint': 'Pense à utiliser 18 - age pour le nombre d\'années restantes.',
+   770→                        'explanation': 'On teste si age >= 18. Si oui, majeur. Sinon, mineur et on calcule 18 - age.',
+   771→                        'starter': 'age = 15  # modifie pour tester\n\n',
+   772→                        'solution': 'age = 15\nif age >= 18:\n    print("Tu es majeur")\nelse:\n    print("Tu es mineur, il te reste", 18 - age, "ans")\n',
+   773→                        'expected_output': 'Tu es mineur, il te reste 3 ans\n',
+   774→                        'eval_mode': 'exact',
+   775→                    },
+   776→                    {
+   777→                        'type': 'code_exercise',
+   778→                        'title': 'Calculatrice simple',
+   779→                        'instructions': """Crée deux variables `a = 10` et `b = 3`. Affiche :
+   780→- leur somme
+   781→- leur différence
+   782→- leur produit
+   783→- leur quotient entier (//)
+   784→- leur reste (%)
+   785→
+   786→Chaque résultat sur une ligne.""",
+   787→                        'difficulty': 'easy',
+   788→                        'points': 10,
+   789→                        'hint': 'Utilise +, -, *, //, %.',
+   790→                        'explanation': 'On utilise les 5 opérateurs arithmétiques de base.',
+   791→                        'starter': 'a = 10\nb = 3\n\n',
+   792→                        'solution': 'a = 10\nb = 3\nprint(a + b)\nprint(a - b)\nprint(a * b)\nprint(a // b)\nprint(a % b)\n',
+   793→                        'expected_output': '13\n7\n30\n3\n1\n',
+   794→                        'eval_mode': 'exact',
+   795→                    },
+   796→                ],
+   797→            },
+   798→            {
+   799→                'order': 1,
+   800→                'title': 'Boucles (for / while)',
+   801→                'slug': 'boucles-for-while',
+   802→                'minutes': 35,
+   803→                'free_preview': True,
+   804→                'blocks': [
+   805→                    {
+   806→                        'type': 'text',
+   807→                        'content': """# Boucles : for et while
+   808→
+   809→Les boucles permettent de **répéter** un bloc de code plusieurs fois.
+   810→
+   811→## Boucle `for`
+   812→
+   813→On l'utilise quand on connaît à l'avance le nombre d'itérations. En Python, `for` parcourt une séquence (liste, chaîne, `range`, etc.).
+   814→
+   815→### `range(n)` — de 0 à n-1
+   816→
+   817→```python
+   818→for i in range(5):
+   819→    print(i)
+   820→# Affiche : 0 1 2 3 4
+   821→```
+   822→
+   823→### `range(a, b)` — de a à b-1
+   824→
+   825→```python
+   826→for i in range(1, 6):
+   827→    print(i)
+   828→# Affiche : 1 2 3 4 5
+   829→```
+   830→
+   831→### `range(a, b, pas)` — avec un pas
+   832→
+   833→```python
+   834→for i in range(0, 10, 2):
+   835→    print(i)
+   836→# Affiche : 0 2 4 6 8
+   837→```
+   838→
+   839→### Parcourir une chaîne
+   840→
+   841→```python
+   842→for lettre in "Python":
+   843→    print(lettre)
+   844→# P y t h o n
+   845→```
+   846→
+   847→## Boucle `while`
+   848→
+   849→On l'utilise tant qu'une condition est vraie (on ne sait pas forcément combien d'itérations).
+   850→
+   851→```python
+   852→n = 5
+   853→while n > 0:
+   854→    print(n)
+   855→    n -= 1
+   856→print("Décollage !")
+   857→# Affiche : 5 4 3 2 1 Décollage !
+   858→```
+   859→
+   860→⚠ **Attention aux boucles infinies !** Si tu oublies de modifier la variable de condition, la boucle ne s'arrête jamais :
+   861→
+   862→```python
+   863→# ❌ BOUCLE INFINIE — ne jamais faire ça
+   864→n = 5
+   865→while n > 0:
+   866→    print(n)
+   867→    # on a oublié n -= 1 → n reste 5 pour toujours
+   868→```
+   869→
+   870→## `break` et `continue`
+   871→
+   872→- `break` sort de la boucle immédiatement
+   873→- `continue` passe à l'itération suivante
+   874→
+   875→```python
+   876→for i in range(10):
+   877→    if i == 5:
+   878→        break       # on sort à i = 5
+   879→    print(i)
+   880→# 0 1 2 3 4
+   881→
+   882→for i in range(5):
+   883→    if i == 2:
+   884→        continue    # on saute i = 2
+   885→    print(i)
+   886→# 0 1 3 4
+   887→```
+   888→
+   889→## `else` dans une boucle
+   890→
+   891→Python permet un `else` après une boucle, exécuté si la boucle s'est terminée **sans `break`** :
+   892→
+   893→```python
+   894→for i in range(5):
+   895→    print(i)
+   896→else:
+   897→    print("Boucle terminée normalement")
+   898→```
+   899→
+   900→## Choisir entre `for` et `while`
+   901→
+   902→| Situation | Boucle recommandée |
+   903→|-----------|--------------------|
+   904→| Nombre d'itérations connu | `for` |
+   905→| Parcourir une séquence | `for` |
+   906→| Condition d'arrêt complexe | `while` |
+   907→| Attendre un événement | `while` |""",
+   908→                    },
+   909→                    {
+   910→                        'type': 'sandbox',
+   911→                        'title': 'Expérimente les boucles',
+   912→                        'code': '# Boucle for classique\nprint("Compte de 1 à 5 :")\nfor i in range(1, 6):\n    print(i)\n\nprint()\n\n# Boucle for avec pas\nprint("Pairs de 0 à 10 :")\nfor i in range(0, 11, 2):\n    print(i)\n\nprint()\n\n# Boucle while\nprint("Compte à rebours :")\nn = 3\nwhile n > 0:\n    print(n)\n    n -= 1\nprint("Partez !")\n\nprint()\n\n# break\nprint("On s\'arrête à 3 :")\nfor i in range(10):\n    if i == 3:\n        break\n    print(i)\n',
+   913→                    },
+   914→                    {
+   915→                        'type': 'mcq',
+   916→                        'title': 'range()',
+   917→                        'question': 'Que vaut `list(range(1, 5))` ?',
+   918→                        'explanation': "range(1, 5) génère les nombres de 1 à 4 (5 est exclu).",
+   919→                        'choices': [
+   920→                            {'text': '[1, 2, 3, 4, 5]', 'correct': False, 'feedback': 'Non, 5 est exclu.'},
+   921→                            {'text': '[1, 2, 3, 4]', 'correct': True, 'feedback': 'Exact ! range(a, b) va de a à b-1.'},
+   922→                            {'text': '[0, 1, 2, 3, 4]', 'correct': False, 'feedback': 'Non, on commence à 1.'},
+   923→                            {'text': '[1, 2, 3, 4, 5, 6]', 'correct': False, 'feedback': 'Non, on s\'arrête avant 5.'},
+   924→                        ],
+   925→                    },
+   926→                    {
+   927→                        'type': 'mcq',
+   928→                        'title': 'Boucle infinie',
+   929→                        'question': "Lequel de ces codes crée une boucle infinie ?",
+   930→                        'explanation': "Si la condition de la boucle while ne devient jamais False, c'est une boucle infinie.",
+   931→                        'choices': [
+   932→                            {'text': 'while True:\\n    print("x")', 'correct': True, 'feedback': 'Exact ! True sera toujours vrai.'},
+   933→                            {'text': 'for i in range(10):\\n    print(i)', 'correct': False, 'feedback': 'Cette boucle s\'arrête à 10.'},
+   934→                            {'text': 'i = 0\\nwhile i < 5:\\n    print(i)\\n    i += 1', 'correct': False, 'feedback': 'i augmente, la boucle s\'arrête.'},
+   935→                            {'text': 'for c in "abc":\\n    print(c)', 'correct': False, 'feedback': 'Cette boucle s\'arrête après 3 lettres.'},
+   936→                        ],
+   937→                    },
+   938→                    {
+   939→                        'type': 'code_exercise',
+   940→                        'title': 'Somme de 1 à N',
+   941→                        'instructions': """Calcule la somme des entiers de 1 à 10 inclus (1 + 2 + 3 + ... + 10) avec une boucle `for`. Affiche le résultat final.
+   942→
+   943→(Astuce mathématique : la réponse est 55.)""",
+   944→                        'difficulty': 'easy',
+   945→                        'points': 10,
+   946→                        'hint': 'Initialise une variable somme = 0, puis ajoute chaque i avec somme += i.',
+   947→                        'explanation': 'On initialise une variable à 0, puis on lui ajoute chaque entier de 1 à 10.',
+   948→                        'starter': 'somme = 0\n# complète la boucle\n\nprint(somme)\n',
+   949→                        'solution': 'somme = 0\nfor i in range(1, 11):\n    somme += i\nprint(somme)\n',
+   950→                        'expected_output': '55\n',
+   951→                        'eval_mode': 'exact',
+   952→                    },
+   953→                    {
+   954→                        'type': 'code_exercise',
+   955→                        'title': 'Table de multiplication',
+   956→                        'instructions': """Affiche la table de multiplication de 7, de 7×1 jusqu'à 7×10. Chaque ligne au format :
+   957→`7 x 1 = 7`
+   958→`7 x 2 = 14`
+   959→...
+   960→`7 x 10 = 70`""",
+   961→                        'difficulty': 'medium',
+   962→                        'points': 15,
+   963→                        'hint': 'Utilise une boucle for i in range(1, 11) et affiche 7, "x", i, "=", 7*i.',
+   964→                        'explanation': 'On boucle de 1 à 10, et on affiche le calcul et le résultat.',
+   965→                        'starter': '# Affiche la table de 7\n\n',
+   966→                        'solution': 'for i in range(1, 11):\n    print(7, "x", i, "=", 7 * i)\n',
+   967→                        'expected_output': '7 x 1 = 7\n7 x 2 = 14\n7 x 3 = 21\n7 x 4 = 28\n7 x 5 = 35\n7 x 6 = 42\n7 x 7 = 49\n7 x 8 = 56\n7 x 9 = 63\n7 x 10 = 70\n',
+   968→                        'eval_mode': 'exact',
+   969→                    },
+   970→                    {
+   971→                        'type': 'true_false',
+   972→                        'title': 'Vrai ou Faux ? Boucles',
+   973→                        'instructions': 'Indique si chaque affirmation est vraie ou fausse.',
+   974→                        'explanation': "range(5) va de 0 à 4 (5 exclu). break sort de la boucle, continue passe à l'itération suivante.",
+   975→                        'statements': [
+   976→                            {'statement': 'range(5) génère 0, 1, 2, 3, 4', 'is_true': True},
+   977→                            {'statement': "break permet de passer à l'itération suivante", 'is_true': False},
+   978→                            {'statement': "continue permet de sortir d'une boucle", 'is_true': False},
+   979→                            {'statement': "Une boucle while peut ne jamais s'exécuter si la condition est fausse au départ", 'is_true': True},
+   980→                        ],
+   981→                    },
+   982→                ],
+   983→            },
+   984→            {
+   985→                'order': 2,
+   986→                'title': 'Fonctions',
+   987→                'slug': 'fonctions',
+   988→                'minutes': 35,
+   989→                'free_preview': True,
+   990→                'blocks': [
+   991→                    {
+   992→                        'type': 'text',
+   993→                        'content': """# Fonctions
+   994→
+   995→## Pourquoi des fonctions ?
+   996→
+   997→Une **fonction** est un bloc de code réutilisable. Elle permet :
+   998→- d'**éviter la répétition** (DRY : Don't Repeat Yourself)
+   999→- de **structurer** le programme
+  1000→- de **tester** chaque partie indépendamment
+  1001→
+  1002→## Définir une fonction
+  1003→
+  1004→On utilise le mot-clé `def` :
+  1005→
+  1006→```python
+  1007→def saluer():
+  1008→    print("Bonjour !")
+  1009→
+  1010→saluer()  # Appel de la fonction → affiche "Bonjour !"
+  1011→```
+  1012→
+  1013→## Fonction avec paramètres
+  1014→
+  1015→```python
+  1016→def saluer(nom):
+  1017→    print("Bonjour", nom, "!")
+  1018→
+  1019→saluer("Awa")    # Bonjour Awa !
+  1020→saluer("Kofi")   # Bonjour Kofi !
+  1021→```
+  1022→
+  1023→## Valeur de retour : `return`
+  1024→
+  1025→Une fonction peut **renvoyer** un résultat avec `return` :
+  1026→
+  1027→```python
+  1028→def carre(x):
+  1029→    return x * x
+  1030→
+  1031→resultat = carre(5)
+  1032→print(resultat)   # 25
+  1033→```
+  1034→
+  1035→⚠ Une fois `return` exécuté, la fonction s'arrête. Le code après `return` n'est jamais exécuté.
+  1036→
+  1037→## Plusieurs paramètres
+  1038→
+  1039→```python
+  1040→def addition(a, b):
+  1041→    return a + b
+  1042→
+  1043→print(addition(3, 5))   # 8
+  1044→```
+  1045→
+  1046→## Paramètres par défaut
+  1047→
+  1048→On peut donner une valeur par défaut à un paramètre :
+  1049→
+  1050→```python
+  1051→def saluer(nom, message="Bonjour"):
+  1052→    print(message, nom)
+  1053→
+  1054→saluer("Awa")              # Bonjour Awa
+  1055→saluer("Kofi", "Salut")    # Salut Kofi
+  1056→```
+  1057→
+  1058→⚠ Les paramètres avec valeur par défaut doivent être **en dernier**.
+  1059→
+  1060→## Arguments nommés
+  1061→
+  1062→On peut nommer les arguments lors de l'appel :
+  1063→
+  1064→```python
+  1065→def puissance(base, exposant):
+  1066→    return base ** exposant
+  1067→
+  1068→print(puissance(2, 10))             # 1024
+  1069→print(puissance(exposant=10, base=2))  # 1024 (ordre inversé)
+  1070→```
+  1071→
+  1072→## Portée des variables
+  1073→
+  1074→Une variable définie **dans** une fonction n'existe pas à l'extérieur :
+  1075→
+  1076→```python
+  1077→def ma_fonction():
+  1078→    x = 10
+  1079→    print(x)
+  1080→
+  1081→ma_fonction()  # 10
+  1082→print(x)       # ❌ NameError : x n'existe pas ici
+  1083→```
+  1084→
+  1085→## Docstring
+  1086→
+  1087→Une bonne fonction est documentée avec une **docstring** :
+  1088→
+  1089→```python
+  1090→def aire_rectangle(longueur, largeur):
+  1091→    '''Calcule l'aire d'un rectangle.
+  1092→
+  1093→    Args:
+  1094→        longueur (float): la longueur du rectangle
+  1095→        largeur (float): la largeur du rectangle
+  1096→
+  1097→    Returns:
+  1098→        float: l'aire (longueur * largeur)
+  1099→    '''
+  1100→    return longueur * largeur
+  1101→```
+  1102→
+  1103→## Bonnes pratiques
+  1104→
+  1105→- ✅ Nom clair (verbe + complément) : `calculer_moyenne`, `est_pair`
+  1106→- ✅ Une fonction = une tâche
+  1107→- ✅ Documenter avec une docstring
+  1108→- ✅ Tester avec différents arguments
+  1109→- ❌ Éviter les effets de bord (modifier des variables globales)""",
+  1110→                    },
+  1111→                    {
+  1112→                        'type': 'sandbox',
+  1113→                        'title': 'Écris tes propres fonctions',
+  1114→                        'code': '# Définition de fonctions\ndef bonjour(nom):\n    print("Bonjour", nom + "!")\n\ndef carre(x):\n    return x * x\n\ndef est_pair(n):\n    return n % 2 == 0\n\n# Appels\nbonjour("Awa")\nbonjour("Kofi")\n\nprint(carre(5))\nprint(carre(7))\n\nprint(est_pair(4))\nprint(est_pair(7))\n',
+  1115→                    },
+  1116→                    {
+  1117→                        'type': 'mcq',
+  1118→                        'title': 'return vs print',
+  1119→                        'question': "Quelle est la différence entre `return` et `print` ?",
+  1120→                        'explanation': "return renvoie une valeur utilisable dans le reste du programme ; print affiche juste à l'écran.",
+  1121→                        'choices': [
+  1122→                            {'text': 'Aucune, ce sont des synonymes', 'correct': False, 'feedback': 'Faux, ils servent à des choses différentes.'},
+  1123→                            {'text': 'return renvoie une valeur utilisable ; print affiche juste à l\'écran', 'correct': True, 'feedback': 'Exact ! return permet de récupérer le résultat.'},
+  1124→                            {'text': 'print renvoie une valeur ; return affiche', 'correct': False, 'feedback': 'C\'est l\'inverse.'},
+  1125→                            {'text': 'return ne marche que dans les boucles', 'correct': False, 'feedback': 'return s\'utilise dans les fonctions.'},
+  1126→                        ],
+  1127→                    },
+  1128→                    {
+  1129→                        'type': 'mcq',
+  1130→                        'title': 'Paramètres par défaut',
+  1131→                        'question': "Que se passe-t-il si on appelle `saluer()` avec la définition `def saluer(nom=\"Monde\"):` ?",
+  1132→                        'explanation': "Quand on ne passe pas d'argument, le paramètre prend sa valeur par défaut.",
+  1133→                        'choices': [
+  1134→                            {'text': 'Erreur : argument manquant', 'correct': False, 'feedback': 'Non, il y a une valeur par défaut.'},
+  1135→                            {'text': 'nom vaut "Monde"', 'correct': True, 'feedback': 'Bravo ! La valeur par défaut est utilisée.'},
+  1136→                            {'text': 'nom vaut None', 'correct': False, 'feedback': 'Non, None ne serait utilisé que sans valeur par défaut.'},
+  1137→                            {'text': 'nom vaut ""', 'correct': False, 'feedback': 'Non, la valeur par défaut est "Monde".'},
+  1138→                        ],
+  1139→                    },
+  1140→                    {
+  1141→                        'type': 'code_exercise',
+  1142→                        'title': 'Fonction maximum',
+  1143→                        'instructions': """Écris une fonction `maximum(a, b)` qui renvoie le plus grand des deux nombres `a` et `b`.
+  1144→
+  1145→Teste-la avec `print(maximum(10, 20))` (doit afficher 20) et `print(maximum(50, 5))` (doit afficher 50).""",
+  1146→                        'difficulty': 'easy',
+  1147→                        'points': 10,
+  1148→                        'hint': 'Utilise une condition if a > b: return a else: return b.',
+  1149→                        'explanation': 'On compare a et b et on renvoie le plus grand.',
+  1150→                        'starter': 'def maximum(a, b):\n    # complète ici\n    pass\n\nprint(maximum(10, 20))\nprint(maximum(50, 5))\n',
+  1151→                        'solution': 'def maximum(a, b):\n    if a > b:\n        return a\n    else:\n        return b\n\nprint(maximum(10, 20))\nprint(maximum(50, 5))\n',
+  1152→                        'expected_output': '20\n50\n',
+  1153→                        'eval_mode': 'exact',
+  1154→                    },
+  1155→                    {
+  1156→                        'type': 'code_exercise',
+  1157→                        'title': 'Fonction factorielle',
+  1158→                        'instructions': """Écris une fonction `factorielle(n)` qui calcule la factorielle de n (le produit 1 × 2 × 3 × ... × n).
+  1159→
+  1160→Convention : factorielle(0) = 1.
+  1161→
+  1162→Teste avec `print(factorielle(5))` qui doit afficher `120` (car 1×2×3×4×5 = 120).""",
+  1163→                        'difficulty': 'medium',
+  1164→                        'points': 15,
+  1165→                        'hint': 'Initialise resultat = 1, puis multiplie par chaque i de 1 à n avec une boucle for.',
+  1166→                        'explanation': 'On accumule le produit des entiers de 1 à n dans une variable.',
+  1167→                        'starter': 'def factorielle(n):\n    # complète\n    pass\n\nprint(factorielle(5))\n',
+  1168→                        'solution': 'def factorielle(n):\n    resultat = 1\n    for i in range(1, n + 1):\n        resultat *= i\n    return resultat\n\nprint(factorielle(5))\n',
+  1169→                        'expected_output': '120\n',
+  1170→                        'eval_mode': 'exact',
+  1171→                    },
+  1172→                    {
+  1173→                        'type': 'fill_blank',
+  1174→                        'title': 'Complète la fonction',
+  1175→                        'instructions': 'Complète la fonction qui calcule le double.',
+  1176→                        'text_with_blanks': "{{blank_1}} double(x):\n    {{blank_2}} x * 2",
+  1177→                        'answers': {
+  1178→                            'blank_1': ['def'],
+  1179→                            'blank_2': ['return'],
+  1180→                        },
+  1181→                        'explanation': 'On définit la fonction avec def, puis on renvoie le résultat avec return.',
+  1182→                    },
+  1183→                ],
+  1184→            },
+  1185→        ],
+  1186→    },
+  1187→
+  1188→    # ──────────────────────────────────────────────────────────────────────
+  1189→    # MODULE 3 — Structures de données
+  1190→    # ──────────────────────────────────────────────────────────────────────
+  1191→    {
+  1192→        'order': 2,
+  1193→        'title': 'Structures de données',
+  1194→        'description': "Listes, tuples, dictionnaires et chaînes : organiser tes données.",
+  1195→        'lessons': [
+  1196→            {
+  1197→                'order': 0,
+  1198→                'title': 'Listes',
+  1199→                'slug': 'listes',
+  1200→                'minutes': 35,
+  1201→                'free_preview': True,
+  1202→                'blocks': [
+  1203→                    {
+  1204→                        'type': 'text',
+  1205→                        'content': """# Listes
+  1206→
+  1207→## Qu'est-ce qu'une liste ?
+  1208→
+  1209→Une **liste** est une collection ordonnée et modifiable d'éléments. C'est la structure de données la plus utilisée en Python.
+  1210→
+  1211→```python
+  1212→fruits = ["pomme", "banane", "cerise"]
+  1213→notes = [14, 17, 12, 19]
+  1214→mixte = [1, "deux", 3.0, True]
+  1215→vide = []
+  1216→```
+  1217→
+  1218→## Accès aux éléments
+  1219→
+  1220→On accède à un élément par son **index** (commence à 0) :
+  1221→
+  1222→```python
+  1223→fruits = ["pomme", "banane", "cerise"]
+  1224→print(fruits[0])   # "pomme"
+  1225→print(fruits[1])   # "banane"
+  1226→print(fruits[-1])  # "cerise" (dernier élément)
+  1227→print(fruits[-2])  # "banane" (avant-dernier)
+  1228→```
+  1229→
+  1230→## Modification
+  1231→
+  1232→Les listes sont **mutables** (modifiables) :
+  1233→
+  1234→```python
+  1235→fruits = ["pomme", "banane", "cerise"]
+  1236→fruits[0] = "abricot"
+  1237→print(fruits)  # ['abricot', 'banane', 'cerise']
+  1238→```
+  1239→
+  1240→## Tranchage (slicing)
+  1241→
+  1242→On extrait une portion avec `[début:fin]` (fin exclu) :
+  1243→
+  1244→```python
+  1245→notes = [10, 12, 14, 16, 18, 20]
+  1246→print(notes[1:4])    # [12, 14, 16]
+  1247→print(notes[:3])     # [10, 12, 14]  (du début à 3)
+  1248→print(notes[3:])     # [16, 18, 20]  (de 3 à la fin)
+  1249→print(notes[:])      # toute la liste (copie)
+  1250→print(notes[::2])    # [10, 14, 18]  (tous les 2 éléments)
+  1251→```
+  1252→
+  1253→## Méthodes courantes
+  1254→
+  1255→```python
+  1256→fruits = ["pomme", "banane"]
+  1257→
+  1258→fruits.append("cerise")        # ajoute à la fin
+  1259→print(fruits)                  # ['pomme', 'banane', 'cerise']
+  1260→
+  1261→fruits.insert(1, "kiwi")       # insère à l'index 1
+  1262→print(fruits)                  # ['pomme', 'kiwi', 'banane', 'cerise']
+  1263→
+  1264→fruits.remove("kiwi")          # supprime la première occurrence
+  1265→print(fruits)                  # ['pomme', 'banane', 'cerise']
+  1266→
+  1267→dernier = fruits.pop()         # supprime et renvoie le dernier
+  1268→print(dernier)                 # 'cerise'
+  1269→print(fruits)                  # ['pomme', 'banane']
+  1270→
+  1271→print(len(fruits))             # 2 (longueur)
+  1272→print("pomme" in fruits)       # True (appartenance)
+  1273→
+  1274→fruits.sort()                  # trie sur place
+  1275→fruits.reverse()               # inverse
+  1276→```
+  1277→
+  1278→## Parcourir une liste
+  1279→
+  1280→```python
+  1281→fruits = ["pomme", "banane", "cerise"]
+  1282→
+  1283→# Par les éléments
+  1284→for fruit in fruits:
+  1285→    print(fruit)
+  1286→
+  1287→# Par les index
+  1288→for i in range(len(fruits)):
+  1289→    print(i, fruits[i])
+  1290→
+  1291→# enumerate : index + élément
+  1292→for i, fruit in enumerate(fruits):
+  1293→    print(i, fruit)
+  1294→```
+  1295→
+  1296→## Listes de listes
+  1297→
+  1298→Une liste peut contenir d'autres listes (matrice) :
+  1299→
+  1300→```python
+  1301→matrice = [
+  1302→    [1, 2, 3],
+  1303→    [4, 5, 6],
+  1304→    [7, 8, 9]
+  1305→]
+  1306→print(matrice[1][2])   # 6 (ligne 1, colonne 2)
+  1307→```""",
+  1308→                    },
+  1309→                    {
+  1310→                        'type': 'sandbox',
+  1311→                        'title': 'Manipule les listes',
+  1312→                        'code': '# Création\nfruits = ["pomme", "banane", "cerise"]\nprint(fruits)\n\n# Accès\nprint("Premier :", fruits[0])\nprint("Dernier :", fruits[-1])\n\n# Modification\nfruits[0] = "abricot"\nprint("Après modif :", fruits)\n\n# Ajout\nfruits.append("kiwi")\nprint("Après append :", fruits)\n\n# Longueur et appartenance\nprint("Longueur :", len(fruits))\nprint("banane dedans ?", "banane" in fruits)\n\n# Parcours\nfor i, f in enumerate(fruits):\n    print(i, f)\n',
+  1313→                    },
+  1314→                    {
+  1315→                        'type': 'mcq',
+  1316→                        'title': 'Index des listes',
+  1317→                        'question': "Que vaut `liste[2]` si `liste = ['a', 'b', 'c', 'd']` ?",
+  1318→                        'explanation': "Les index commencent à 0. Donc liste[0]='a', liste[1]='b', liste[2]='c'.",
+  1319→                        'choices': [
+  1320→                            {'text': "'a'", 'correct': False, 'feedback': 'Non, c\'est liste[0].'},
+  1321→                            {'text': "'b'", 'correct': False, 'feedback': 'Non, c\'est liste[1].'},
+  1322→                            {'text': "'c'", 'correct': True, 'feedback': 'Exact ! Index 2 = 3e élément.'},
+  1323→                            {'text': "'d'", 'correct': False, 'feedback': 'Non, c\'est liste[3].'},
+  1324→                        ],
+  1325→                    },
+  1326→                    {
+  1327→                        'type': 'mcq',
+  1328→                        'title': 'Slicing',
+  1329→                        'question': "Que vaut `notes[1:4]` si `notes = [10, 12, 14, 16, 18, 20]` ?",
+  1330→                        'explanation': "notes[1:4] prend les éléments d'index 1, 2, 3 (4 exclu).",
+  1331→                        'choices': [
+  1332→                            {'text': '[10, 12, 14]', 'correct': False, 'feedback': 'Non, on commence à l\'index 1, pas 0.'},
+  1333→                            {'text': '[12, 14, 16]', 'correct': True, 'feedback': 'Bravo ! Index 1, 2, 3.'},
+  1334→                            {'text': '[12, 14, 16, 18]', 'correct': False, 'feedback': 'Non, 4 est exclu.'},
+  1335→                            {'text': '[14, 16, 18]', 'correct': False, 'feedback': 'Non, on commence à 1.'},
+  1336→                        ],
+  1337→                    },
+  1338→                    {
+  1339→                        'type': 'code_exercise',
+  1340→                        'title': 'Somme d\'une liste',
+  1341→                        'instructions': """Calcule la somme de la liste `notes = [12, 15, 8, 17, 14]` en utilisant une boucle `for`. Affiche le résultat.
+  1342→
+  1343→(Réponse attendue : 66)""",
+  1344→                        'difficulty': 'easy',
+  1345→                        'points': 10,
+  1346→                        'hint': 'Initialise somme = 0 puis ajoute chaque note avec somme += note.',
+  1347→                        'explanation': 'On parcourt chaque élément et on l\'ajoute à un accumulateur.',
+  1348→                        'starter': 'notes = [12, 15, 8, 17, 14]\n\n',
+  1349→                        'solution': 'notes = [12, 15, 8, 17, 14]\nsomme = 0\nfor note in notes:\n    somme += note\nprint(somme)\n',
+  1350→                        'expected_output': '66\n',
+  1351→                        'eval_mode': 'exact',
+  1352→                    },
+  1353→                    {
+  1354→                        'type': 'code_exercise',
+  1355→                        'title': 'Maximum d\'une liste',
+  1356→                        'instructions': """Écris une fonction `maximum(liste)` qui renvoie le plus grand élément d'une liste de nombres.
+  1357→
+  1358→Teste avec `print(maximum([3, 7, 2, 9, 5]))` qui doit afficher `9`.""",
+  1359→                        'difficulty': 'medium',
+  1360→                        'points': 15,
+  1361→                        'hint': 'Initialise max = liste[0], puis compare chaque élément.',
+  1362→                        'explanation': 'On commence avec le premier élément comme max, puis on met à jour si on trouve plus grand.',
+  1363→                        'starter': 'def maximum(liste):\n    # complète\n    pass\n\nprint(maximum([3, 7, 2, 9, 5]))\n',
+  1364→                        'solution': 'def maximum(liste):\n    max_val = liste[0]\n    for x in liste:\n        if x > max_val:\n            max_val = x\n    return max_val\n\nprint(maximum([3, 7, 2, 9, 5]))\n',
+  1365→                        'expected_output': '9\n',
+  1366→                        'eval_mode': 'exact',
+  1367→                    },
+  1368→                    {
+  1369→                        'type': 'true_false',
+  1370→                        'title': 'Vrai ou Faux ? Listes',
+  1371→                        'instructions': 'Indique si chaque affirmation est vraie ou fausse.',
+  1372→                        'explanation': "Les listes sont mutables. append ajoute à la fin. len() donne la longueur.",
+  1373→                        'statements': [
+  1374→                            {'statement': "Les listes sont mutables en Python", 'is_true': True},
+  1375→                            {'statement': "append() ajoute un élément au début de la liste", 'is_true': False},
+  1376→                            {'statement': "len([1, 2, 3]) renvoie 3", 'is_true': True},
+  1377→                            {'statement': "liste[-1] accède au premier élément", 'is_true': False},
+  1378→                        ],
+  1379→                    },
+  1380→                ],
+  1381→            },
+  1382→            {
+  1383→                'order': 1,
+  1384→                'title': 'Tuples et dictionnaires',
+  1385→                'slug': 'tuples-dictionnaires',
+  1386→                'minutes': 30,
+  1387→                'free_preview': True,
+  1388→                'blocks': [
+  1389→                    {
+  1390→                        'type': 'text',
+  1391→                        'content': """# Tuples et dictionnaires
+  1392→
+  1393→## Tuples
+  1394→
+  1395→Un **tuple** est comme une liste mais **immuable** (non modifiable). On l'écrit avec des parenthèses :
+  1396→
+  1397→```python
+  1398→point = (3, 5)
+  1399→couleur = (255, 128, 0)
+  1400→singleton = (42,)   # tuple à un élément (la virgule est obligatoire)
+  1401→```
+  1402→
+  1403→### Pourquoi utiliser un tuple ?
+  1404→
+  1405→- **Protéger des données** qui ne doivent pas changer
+  1406→- Plus **rapide** qu'une liste
+  1407→- Sert souvent à **regrouper des valeurs liées** (coordonnées, RGB, date...)
+  1408→
+  1409→### Opérations
+  1410→
+  1411→```python
+  1412→point = (3, 5)
+  1413→print(point[0])     # 3
+  1414→print(point[1])     # 5
+  1415→print(len(point))   # 2
+  1416→
+  1417→# ❌ Impossible de modifier
+  1418→# point[0] = 10  → TypeError
+  1419→
+  1420→# Déballage (unpacking)
+  1421→x, y = point
+  1422→print(x)   # 3
+  1423→print(y)   # 5
+  1424→```
+  1425→
+  1426→### Échange de variables
+  1427→
+  1428→Le tuple permet l'échange élégant :
+  1429→
+  1430→```python
+  1431→a, b = 1, 2
+  1432→a, b = b, a   # a=2, b=1
+  1433→```
+  1434→
+  1435→## Dictionnaires
+  1436→
+  1437→Un **dictionnaire** est une collection de paires **clé → valeur**. On l'écrit avec des accolades :
+  1438→
+  1439→```python
+  1440→etudiant = {
+  1441→    "nom": "Awa",
+  1442→    "age": 20,
+  1443→    "notes": [14, 17, 12],
+  1444→    "majeur": True
+  1445→}
+  1446→```
+  1447→
+  1448→### Accès aux valeurs
+  1449→
+  1450→```python
+  1451→print(etudiant["nom"])    # "Awa"
+  1452→print(etudiant["age"])    # 20
+  1453→
+  1454→# Avec .get() — ne plante pas si la clé n'existe pas
+  1455→print(etudiant.get("ville", "Inconnue"))   # "Inconnue"
+  1456→```
+  1457→
+  1458→### Modification
+  1459→
+  1460→```python
+  1461→etudiant["age"] = 21            # modifie une valeur
+  1462→etudiant["ville"] = "Lomé"      # ajoute une nouvelle paire
+  1463→del etudiant["majeur"]          # supprime une paire
+  1464→```
+  1465→
+  1466→### Parcours
+  1467→
+  1468→```python
+  1469→# Parcours des clés
+  1470→for cle in etudiant:
+  1471→    print(cle)
+  1472→
+  1473→# Parcours des valeurs
+  1474→for valeur in etudiant.values():
+  1475→    print(valeur)
+  1476→
+  1477→# Parcours des paires
+  1478→for cle, valeur in etudiant.items():
+  1479→    print(cle, "->", valeur)
+  1480→```
+  1481→
+  1482→### Méthodes utiles
+  1483→
+  1484→```python
+  1485→print(len(etudiant))           # nombre de paires
+  1486→print("nom" in etudiant)       # True (clé présente)
+  1487→etudiant.update({"pays": "Togo"})  # ajoute plusieurs paires
+  1488→```
+  1489→
+  1490→## Quand utiliser quoi ?
+  1491→
+  1492→| Structure | Use case |
+  1493→|-----------|----------|
+  1494→| `list` | Collection ordonnée modifiable |
+  1495→| `tuple` | Données liées immuables (coordonnées, RGB) |
+  1496→| `dict` | Association clé → valeur""",
+  1497→                    },
+  1498→                    {
+  1499→                        'type': 'sandbox',
+  1500→                        'title': 'Tuples et dictionnaires',
+  1501→                        'code': '# Tuple\npoint = (3, 5)\nprint("Point :", point)\nprint("x =", point[0], "y =", point[1])\nx, y = point  # unpacking\nprint("x =", x, "y =", y)\n\nprint()\n\n# Dictionnaire\netudiant = {\n    "nom": "Awa",\n    "age": 20,\n    "notes": [14, 17, 12]\n}\nprint("Nom :", etudiant["nom"])\nprint("Age :", etudiant["age"])\nprint("Ville :", etudiant.get("ville", "Non renseignée"))\n\n# Modification\netudiant["age"] = 21\netudiant["ville"] = "Lomé"\nprint("Après modif :", etudiant)\n\n# Parcours\nfor cle, valeur in etudiant.items():\n    print(cle, "->", valeur)\n',
+  1502→                    },
+  1503→                    {
+  1504→                        'type': 'mcq',
+  1505→                        'title': 'Tuples vs listes',
+  1506→                        'question': "Quelle est la principale différence entre un tuple et une liste ?",
+  1507→                        'explanation': "Un tuple est immuable (non modifiable après création), une liste est mutable.",
+  1508→                        'choices': [
+  1509→                            {'text': 'Un tuple est immuable, une liste est mutable', 'correct': True, 'feedback': 'Exact ! On ne peut pas modifier un tuple après sa création.'},
+  1510→                            {'text': 'Un tuple est plus long', 'correct': False, 'feedback': 'Non, c\'est l\'inverse.'},
+  1511→                            {'text': 'Un tuple ne contient que des nombres', 'correct': False, 'feedback': 'Faux, un tuple peut contenir n\'importe quel type.'},
+  1512→                            {'text': 'Une liste ne peut pas être parcourue', 'correct': False, 'feedback': 'Faux.'},
+  1513→                        ],
+  1514→                    },
+  1515→                    {
+  1516→                        'type': 'mcq',
+  1517→                        'title': 'Dictionnaires',
+  1518→                        'question': "Comment accède-t-on à la valeur de la clé 'nom' dans `d = {'nom': 'Awa'}` ?",
+  1519→                        'explanation': "On utilise la syntaxe d['nom'] ou d.get('nom').",
+  1520→                        'choices': [
+  1521→                            {'text': "d.nom", 'correct': False, 'feedback': 'Non, cette syntaxe marche pour les attributs d\'objet, pas les dict.'},
+  1522→                            {'text': "d['nom']", 'correct': True, 'feedback': 'Bravo ! On utilise les crochets avec la clé.'},
+  1523→                            {'text': "d->nom", 'correct': False, 'feedback': 'Cette syntaxe n\'existe pas en Python.'},
+  1524→                            {'text': "d(nom)", 'correct': False, 'feedback': 'Les dict ne s\'appellent pas comme des fonctions.'},
+  1525→                        ],
+  1526→                    },
+  1527→                    {
+  1528→                        'type': 'code_exercise',
+  1529→                        'title': 'Carnet de notes',
+  1530→                        'instructions': """Crée un dictionnaire `notes` avec les clés suivantes :
+  1531→- "Awa" : 14
+  1532→- "Kofi" : 17
+  1533→- "Aya" : 12
+  1534→
+  1535→Affiche la note de Kofi (avec `print(notes["Kofi"])`).""",
+  1536→                        'difficulty': 'easy',
+  1537→                        'points': 10,
+  1538→                        'hint': 'Définis le dict avec des accolades { }.',
+  1539→                        'explanation': 'On crée le dictionnaire puis on accède à la valeur de la clé "Kofi".',
+  1540→                        'starter': '# Crée le dictionnaire\n\n\n# Affiche la note de Kofi\n',
+  1541→                        'solution': 'notes = {"Awa": 14, "Kofi": 17, "Aya": 12}\nprint(notes["Kofi"])\n',
+  1542→                        'expected_output': '17\n',
+  1543→                        'eval_mode': 'exact',
+  1544→                    },
+  1545→                    {
+  1546→                        'type': 'fill_blank',
+  1547→                        'title': 'Complète le dictionnaire',
+  1548→                        'instructions': 'Complète pour accéder à la valeur de la clé "age".',
+  1549→                        'text_with_blanks': "etudiant = {\"nom\": \"Awa\", \"age\": 20}\nprint(etudiant{{blank_1}})",
+  1550→                        'answers': {
+  1551→                            'blank_1': ['["age"]', "['age']"],
+  1552→                        },
+  1553→                        'explanation': 'On accède à une valeur de dict avec dict[cle] en utilisant des crochets.',
+  1554→                    },
+  1555→                ],
+  1556→            },
+  1557→            {
+  1558→                'order': 2,
+  1559→                'title': 'Chaînes de caractères',
+  1560→                'slug': 'chaines-caracteres',
+  1561→                'minutes': 25,
+  1562→                'free_preview': True,
+  1563→                'blocks': [
+  1564→                    {
+  1565→                        'type': 'text',
+  1566→                        'content': """# Chaînes de caractères
+  1567→
+  1568→Les **chaînes** (`str`) représentent du texte. Elles sont très puissantes en Python.
+  1569→
+  1570→## Création
+  1571→
+  1572→```python
+  1573→# Plusieurs syntaxes équivalentes
+  1574→a = "Bonjour"
+  1575→b = 'Bonjour'
+  1576→c = '''Plusieurs
+  1577→lignes'''
+  1578→d = 'L\'apostrophe'   # échappement avec \
+  1579→```
+  1580→
+  1581→## Concaténation et répétition
+  1582→
+  1583→```python
+  1584→print("Bonjour" + " " + "Awa")  # "Bonjour Awa"
+  1585→print("Abc" * 3)                  # "AbcAbcAbc"
+  1586→```
+  1587→
+  1588→## Index et slicing
+  1589→
+  1590→Comme les listes :
+  1591→
+  1592→```python
+  1593→s = "Python"
+  1594→print(s[0])      # "P"
+  1595→print(s[-1])     # "n"
+  1596→print(s[1:4])    # "yth"
+  1597→print(s[:3])     # "Pyt"
+  1598→```
+  1599→
+  1600→## Longueur
+  1601→
+  1602→```python
+  1603→print(len("Python"))   # 6
+  1604→```
+  1605→
+  1606→## Parcours
+  1607→
+  1608→```python
+  1609→for lettre in "Python":
+  1610→    print(lettre)
+  1611→# P y t h o n
+  1612→```
+  1613→
+  1614→## Méthodes utiles
+  1615→
+  1616→```python
+  1617→s = "  Bonjour Awa  "
+  1618→
+  1619→print(s.upper())        # "  BONJOUR AWA  "
+  1620→print(s.lower())        # "  bonjour awa  "
+  1621→print(s.strip())        # "Bonjour Awa" (enlève les espaces au début/fin)
+  1622→print(s.replace("Awa", "Kofi"))  # "  Bonjour Kofi  "
+  1623→print(s.split())        # ["Bonjour", "Awa"] (découpe par espaces)
+  1624→print("-".join(["a", "b", "c"]))  # "a-b-c"
+  1625→
+  1626→print("Awa" in "Bonjour Awa")   # True (sous-chaîne)
+  1627→print("awa".startswith("a"))    # True
+  1628→print("awa".endswith("wa"))     # True
+  1629→```
+  1630→
+  1631→## Formatage : f-strings
+  1632→
+  1633→La façon moderne de formater du texte :
+  1634→
+  1635→```python
+  1636→nom = "Awa"
+  1637→age = 20
+  1638→print(f"Je m'appelle {nom} et j'ai {age} ans.")
+  1639→# "Je m'appelle Awa et j'ai 20 ans."
+  1640→
+  1641→# Expressions dans les f-strings
+  1642→print(f"Dans 5 ans j'aurai {age + 5} ans.")
+  1643→
+  1644→# Formatage de nombres
+  1645→pi = 3.14159
+  1646→print(f"Pi vaut environ {pi:.2f}")   # "Pi vaut environ 3.14"
+  1647→```
+  1648→
+  1649→## Vérifier le type
+  1650→
+  1651→```python
+  1652→s = "123"
+  1653→print(s.isdigit())   # True (que des chiffres)
+  1654→print(s.isalpha())   # False (que des lettres ? non)
+  1655→print("abc".isalpha())  # True
+  1656→```""",
+  1657→                    },
+  1658→                    {
+  1659→                        'type': 'sandbox',
+  1660→                        'title': 'Joue avec les chaînes',
+  1661→                        'code': 's = "Numeria Institute"\nprint(s.upper())\nprint(s.lower())\nprint(len(s))\nprint(s[0])           # premier caractère\nprint(s[-1])          # dernier\nprint(s[:7])          # "Numeria"\nprint(s.split())      # découpe\n\n# f-strings\nnom = "Awa"\nage = 20\nprint(f"Bonjour {nom}, tu as {age} ans")\n\n# Parcours\nfor lettre in "Python":\n    print(lettre, end=" ")\nprint()\n',
+  1662→                    },
+  1663→                    {
+  1664→                        'type': 'mcq',
+  1665→                        'title': 'f-strings',
+  1666→                        'question': "Que produit `f\"{2 + 3}\"` ?",
+  1667→                        'explanation': "Les f-strings évaluent les expressions entre {} et les convertissent en chaîne.",
+  1668→                        'choices': [
+  1669→                            {'text': '"{2 + 3}"', 'correct': False, 'feedback': 'Non, les {} sont évalués dans une f-string.'},
+  1670→                            {'text': '"5"', 'correct': True, 'feedback': 'Exact ! 2+3=5, converti en chaîne.'},
+  1671→                            {'text': '5 (entier)', 'correct': False, 'feedback': 'Non, c\'est une chaîne "5".'},
+  1672→                            {'text': 'Erreur', 'correct': False, 'feedback': 'Non, c\'est valide.'},
+  1673→                        ],
+  1674→                    },
+  1675→                    {
+  1676→                        'type': 'code_exercise',
+  1677→                        'title': 'Compte les voyelles',
+  1678→                        'instructions': """Compte le nombre de voyelles (a, e, i, o, u, y) dans la chaîne `mot = "numeria"` et affiche le résultat.
+  1679→
+  1680→(Réponse attendue : 4 — u, e, i, a)""",
+  1681→                        'difficulty': 'medium',
+  1682→                        'points': 15,
+  1683→                        'hint': 'Parcours chaque lettre avec for lettre in mot: et teste si elle est dans "aeiouy".',
+  1684→                        'explanation': 'On parcourt chaque lettre, on vérifie si c\'est une voyelle, on incrémente un compteur.',
+  1685→                        'starter': 'mot = "numeria"\n# complète\n\n',
+  1686→                        'solution': 'mot = "numeria"\ncompteur = 0\nfor lettre in mot:\n    if lettre in "aeiouyAEIOUY":\n        compteur += 1\nprint(compteur)\n',
+  1687→                        'expected_output': '4\n',
+  1688→                        'eval_mode': 'exact',
+  1689→                    },
+  1690→                ],
+  1691→            },
+  1692→        ],
+  1693→    },
+  1694→
+  1695→    # ──────────────────────────────────────────────────────────────────────
+  1696→    # MODULE 4 — Algorithmique avancée
+  1697→    # ──────────────────────────────────────────────────────────────────────
+  1698→    {
+  1699→        'order': 3,
+  1700→        'title': 'Algorithmique avancée',
+  1701→        'description': "Récursivité, algorithmes de tri et complexité : pense comme un informaticien.",
+  1702→        'lessons': [
+  1703→            {
+  1704→                'order': 0,
+  1705→                'title': 'Récursivité',
+  1706→                'slug': 'recursivite',
+  1707→                'minutes': 35,
+  1708→                'free_preview': True,
+  1709→                'blocks': [
+  1710→                    {
+  1711→                        'type': 'text',
+  1712→                        'content': """# Récursivité
+  1713→
+  1714→## Qu'est-ce que la récursivité ?
+  1715→
+  1716→Une fonction **récursive** est une fonction qui **s'appelle elle-même**. C'est une façon élégante de résoudre certains problèmes.
+  1717→
+  1718→## Anatomy d'une fonction récursive
+  1719→
+  1720→Toute fonction récursive doit avoir :
+  1721→1. Un **cas de base** : la condition d'arrêt (sinon → récursion infinie)
+  1722→2. Un **cas récursif** : la fonction s'appelle avec un problème plus petit
+  1723→
+  1724→```python
+  1725→def compte_rebours(n):
+  1726→    if n <= 0:                  # ← cas de base
+  1727→        print("Partez !")
+  1728→        return
+  1729→    print(n)
+  1730→    compte_rebours(n - 1)       # ← cas récursif (vers le cas de base)
+  1731→
+  1732→compte_rebours(3)
+  1733→# 3
+  1734→# 2
+  1735→# 1
+  1736→# Partez !
+  1737→```
+  1738→
+  1739→## Exemple classique : factorielle
+  1740→
+  1741→$$n! = n \\times (n-1) \\times (n-2) \\times \\ldots \\times 1$$
+  1742→
+  1743→$$0! = 1 \\quad \\text{(cas de base)}$$
+  1744→
+  1745→$$n! = n \\times (n-1)! \\quad \\text{(cas récursif)}$$
+  1746→
+  1747→```python
+  1748→def factorielle(n):
+  1749→    if n == 0:                  # cas de base
+  1750→        return 1
+  1751→    return n * factorielle(n - 1)   # cas récursif
+  1752→
+  1753→print(factorielle(5))   # 120 = 5 * 4 * 3 * 2 * 1
+  1754→```
+  1755→
+  1756→## Suite de Fibonacci
+  1757→
+  1758→$$F_0 = 0, \\quad F_1 = 1, \\quad F_n = F_{n-1} + F_{n-2}$$
+  1759→
+  1760→```python
+  1761→def fibonacci(n):
+  1762→    if n == 0: return 0
+  1763→    if n == 1: return 1
+  1764→    return fibonacci(n - 1) + fibonacci(n - 2)
+  1765→
+  1766→print(fibonacci(10))   # 55
+  1767→```
+  1768→
+  1769→⚠ Cette version est **très lente** pour n grand (exponentielle). On peut l'optimiser avec de la **mémoïsation**.
+  1770→
+  1771→## Puissance récursive
+  1772→
+  1773→$$x^n = x \\times x^{n-1}$$
+  1774→
+  1775→```python
+  1776→def puissance(x, n):
+  1777→    if n == 0:
+  1778→        return 1
+  1779→    return x * puissance(x, n - 1)
+  1780→
+  1781→print(puissance(2, 10))   # 1024
+  1782→```
+  1783→
+  1784→## Pièges à éviter
+  1785→
+  1786→1. **Oublier le cas de base** → `RecursionError` (récursion infinie)
+  1787→2. **Cas récursif qui ne se rapproche pas du cas de base** → récursion infinie
+  1788→3. **Trop de profondeur** → `RecursionError` (limite ~1000 par défaut en Python)
+  1789→
+  1790→## Récursivité vs itération
+  1791→
+  1792→Tout problème récursif peut être écrit itérativement (avec une boucle) :
+  1793→
+  1794→```python
+  1795→# Itératif
+  1796→def factorielle_iter(n):
+  1797→    resultat = 1
+  1798→    for i in range(1, n + 1):
+  1799→        resultat *= i
+  1800→    return resultat
+  1801→
+  1802→# Récursif
+  1803→def factorielle_rec(n):
+  1804→    if n == 0:
+  1805→        return 1
+  1806→    return n * factorielle_rec(n - 1)
+  1807→```
+  1808→
+  1809→| Critère | Récursif | Itératif |
+  1810→|---------|----------|----------|
+  1811→| Lisibilité | ✅ Souvent plus clair | Variable selon cas |
+  1812→| Performance | ❌ Plus lent (pile) | ✅ Plus rapide |
+  1813→| Mémoire | ❌ Pile d'appels | ✅ Constant |
+  1814→| Limite | ❌ ~1000 appels | ✅ Aucune |
+  1815→
+  1816→**Choisir la récursivité quand** : la structure du problème est naturellement récursive (arbres, fractales, diviser-pour-régner).""",
+  1817→                    },
+  1818→                    {
+  1819→                        'type': 'sandbox',
+  1820→                        'title': 'Teste la récursivité',
+  1821→                        'code': '# Factorielle récursive\ndef factorielle(n):\n    if n == 0:\n        return 1\n    return n * factorielle(n - 1)\n\nprint("5! =", factorielle(5))\nprint("10! =", factorielle(10))\n\n# Fibonacci récursif\ndef fib(n):\n    if n == 0: return 0\n    if n == 1: return 1\n    return fib(n - 1) + fib(n - 2)\n\nfor i in range(10):\n    print(f"fib({i}) = {fib(i)}")\n',
+  1822→                    },
+  1823→                    {
+  1824→                        'type': 'mcq',
+  1825→                        'title': 'Cas de base',
+  1826→                        'question': "Pourquoi une fonction récursive a-t-elle absolument besoin d'un cas de base ?",
+  1827→                        'explanation': "Sans cas de base, la fonction s'appelle indéfiniment → RecursionError.",
+  1828→                        'choices': [
+  1829→                            {'text': 'Pour optimiser la vitesse', 'correct': False, 'feedback': 'Non, c\'est plus fondamental que ça.'},
+  1830→                            {'text': 'Pour arrêter la récursion (sinon boucle infinie)', 'correct': True, 'feedback': 'Exact ! Sans cas de base, la fonction s\'appelle pour toujours.'},
+  1831→                            {'text': 'Pour renvoyer une chaîne', 'correct': False, 'feedback': 'Non, le type de retour n\'a rien à voir.'},
+  1832→                            {'text': 'Pour lire des fichiers', 'correct': False, 'feedback': 'Aucun rapport.'},
+  1833→                        ],
+  1834→                    },
+  1835→                    {
+  1836→                        'type': 'code_exercise',
+  1837→                        'title': 'Factorielle récursive',
+  1838→                        'instructions': """Écris une fonction récursive `factorielle(n)` qui calcule n!.
+  1839→
+  1840→Cas de base : factorielle(0) = 1
+  1841→Cas récursif : factorielle(n) = n × factorielle(n-1)
+  1842→
+  1843→Teste avec `print(factorielle(6))` qui doit afficher `720`.""",
+  1844→                        'difficulty': 'medium',
+  1845→                        'points': 15,
+  1846→                        'hint': 'Pense aux deux cas : if n == 0: return 1 ; else: return n * factorielle(n-1).',
+  1847→                        'explanation': 'La récursivité imite la définition mathématique : 0! = 1, n! = n * (n-1)!.',
+  1848→                        'starter': 'def factorielle(n):\n    # complète\n    pass\n\nprint(factorielle(6))\n',
+  1849→                        'solution': 'def factorielle(n):\n    if n == 0:\n        return 1\n    return n * factorielle(n - 1)\n\nprint(factorielle(6))\n',
+  1850→                        'expected_output': '720\n',
+  1851→                        'eval_mode': 'exact',
+  1852→                    },
+  1853→                    {
+  1854→                        'type': 'code_exercise',
+  1855→                        'title': 'Somme récursive 1+2+...+n',
+  1856→                        'instructions': """Écris une fonction récursive `somme(n)` qui calcule 1 + 2 + 3 + ... + n.
+  1857→
+  1858→Cas de base : somme(0) = 0
+  1859→Cas récursif : somme(n) = n + somme(n-1)
+  1860→
+  1861→Teste avec `print(somme(100))` qui doit afficher `5050`.""",
+  1862→                        'difficulty': 'medium',
+  1863→                        'points': 15,
+  1864→                        'hint': 'Même structure que factorielle, mais avec + au lieu de *.',
+  1865→                        'explanation': 'somme(n) = n + somme(n-1) imite la définition mathématique.',
+  1866→                        'starter': 'def somme(n):\n    # complète\n    pass\n\nprint(somme(100))\n',
+  1867→                        'solution': 'def somme(n):\n    if n == 0:\n        return 0\n    return n + somme(n - 1)\n\nprint(somme(100))\n',
+  1868→                        'expected_output': '5050\n',
+  1869→                        'eval_mode': 'exact',
+  1870→                    },
+  1871→                    {
+  1872→                        'type': 'true_false',
+  1873→                        'title': 'Vrai ou Faux ? Récursivité',
+  1874→                        'instructions': 'Indique si chaque affirmation est vraie ou fausse.',
+  1875→                        'explanation': "Une fonction récursive doit avoir un cas de base. Python limite la profondeur à ~1000 appels.",
+  1876→                        'statements': [
+  1877→                            {'statement': "Une fonction récursive doit toujours avoir un cas de base", 'is_true': True},
+  1878→                            {'statement': "La récursivité est toujours plus rapide que l'itération", 'is_true': False},
+  1879→                            {'statement': "Tout problème récursif peut être résolu itérativement", 'is_true': True},
+  1880→                            {'statement': "factorielle(0) = 0", 'is_true': False},
+  1881→                        ],
+  1882→                    },
+  1883→                ],
+  1884→            },
+  1885→            {
+  1886→                'order': 1,
+  1887→                'title': 'Algorithmes de tri',
+  1888→                'slug': 'algorithmes-tri',
+  1889→                'minutes': 40,
+  1890→                'free_preview': True,
+  1891→                'blocks': [
+  1892→                    {
+  1893→                        'type': 'text',
+  1894→                        'content': """# Algorithmes de tri
+  1895→
+  1896→Trier des données est une opération fondamentale en informatique. On va découvrir trois algorithmes classiques.
+  1897→
+  1898→## Tri par sélection
+  1899→
+  1900→**Idée** : à chaque tour, on trouve le minimum et on l'échange avec l'élément courant.
+  1901→
+  1902→```python
+  1903→def tri_selection(liste):
+  1904→    n = len(liste)
+  1905→    for i in range(n):
+  1906→        # Trouver le min dans liste[i:]
+  1907→        min_idx = i
+  1908→        for j in range(i + 1, n):
+  1909→            if liste[j] < liste[min_idx]:
+  1910→                min_idx = j
+  1911→        # Échanger
+  1912→        liste[i], liste[min_idx] = liste[min_idx], liste[i]
+  1913→    return liste
+  1914→
+  1915→print(tri_selection([5, 2, 8, 1, 9, 3]))
+  1916→# [1, 2, 3, 5, 8, 9]
+  1917→```
+  1918→
+  1919→**Complexité** : $O(n^2)$ — lent sur de grandes listes.
+  1920→
+  1921→## Tri à bulles
+  1922→
+  1923→**Idée** : on compare les éléments adjacents et on les échange s'ils sont dans le mauvais ordre. Les plus grands "remontent" comme des bulles.
+  1924→
+  1925→```python
+  1926→def tri_bulles(liste):
+  1927→    n = len(liste)
+  1928→    for i in range(n):
+  1929→        for j in range(0, n - i - 1):
+  1930→            if liste[j] > liste[j + 1]:
+  1931→                liste[j], liste[j + 1] = liste[j + 1], liste[j]
+  1932→    return liste
+  1933→
+  1934→print(tri_bulles([5, 2, 8, 1, 9, 3]))
+  1935→```
+  1936→
+  1937→**Complexité** : $O(n^2)$.
+  1938→
+  1939→## Tri par insertion
+  1940→
+  1941→**Idée** : comme quand on trie des cartes en main — on insère chaque nouvelle carte à sa place.
+  1942→
+  1943→```python
+  1944→def tri_insertion(liste):
+  1945→    for i in range(1, len(liste)):
+  1946→        cle = liste[i]
+  1947→        j = i - 1
+  1948→        while j >= 0 and liste[j] > cle:
+  1949→            liste[j + 1] = liste[j]
+  1950→            j -= 1
+  1951→        liste[j + 1] = cle
+  1952→    return liste
+  1953→
+  1954→print(tri_insertion([5, 2, 8, 1, 9, 3]))
+  1955→```
+  1956→
+  1957→**Complexité** : $O(n^2)$ dans le pire cas, $O(n)$ sur une liste déjà triée.
+  1958→
+  1959→## Tri rapide (Quicksort) — diviser pour régner
+  1960→
+  1961→**Idée** : choisir un **pivot**, partitionner la liste en deux (éléments ≤ pivot et > pivot), trier récursivement chaque moitié.
+  1962→
+  1963→```python
+  1964→def tri_rapide(liste):
+  1965→    if len(liste) <= 1:
+  1966→        return liste
+  1967→    pivot = liste[0]
+  1968→    gauche = [x for x in liste[1:] if x <= pivot]
+  1969→    droite = [x for x in liste[1:] if x > pivot]
+  1970→    return tri_rapide(gauche) + [pivot] + tri_rapide(droite)
+  1971→
+  1972→print(tri_rapide([5, 2, 8, 1, 9, 3]))
+  1973→```
+  1974→
+  1975→**Complexité** : $O(n \\log n)$ en moyenne, $O(n^2)$ dans le pire cas.
+  1976→
+  1977→## Python a déjà tout prévu
+  1978→
+  1979→En pratique, on utilise `sorted()` ou `.sort()` :
+  1980→
+  1981→```python
+  1982→liste = [5, 2, 8, 1, 9, 3]
+  1983→print(sorted(liste))      # [1, 2, 3, 5, 8, 9] — nouvelle liste
+  1984→liste.sort()              # trie sur place
+  1985→liste.sort(reverse=True)  # tri décroissant
+  1986→```
+  1987→
+  1988→Python utilise **Timsort**, un algorithme optimisé en $O(n \\log n)$.
+  1989→
+  1990→## Tableau comparatif
+  1991→
+  1992→| Algorithme | Complexité moyenne | Stable ? | En place ? |
+  1993→|------------|--------------------|----------|------------|
+  1994→| Sélection | $O(n^2)$ | Non | Oui |
+  1995→| Bulles | $O(n^2)$ | Oui | Oui |
+  1996→| Insertion | $O(n^2)$ | Oui | Oui |
+  1997→| Rapide | $O(n \\log n)$ | Non | Oui |
+  1998→| Timsort (Python) | $O(n \\log n)$ | Oui | Oui |
+  1999→
+  2000→**Stable** : conserve l'ordre des éléments égaux.
+
+[showing lines 1-2000 of 2882; use offset=2001 with limit to continue reading]

@@ -1,0 +1,781 @@
+     1→     1→"""
+     2→     2→Numeria Institute — Courses, Lessons, Blocks, Exercises (REBUILT CLEAN).
+     3→     3→
+     4→     4→This module defines ONLY the new clean system (schema + validation rules)
+     5→     5→as specified in the rebuild spec.
+     6→     6→
+     7→     7→Golden rules:
+     8→     8→- Never store Django template tags in DB fields.
+     9→     9→- Lesson foreign keys use exactly: course_lesson / formation_lesson.
+    10→    10→- Exactly one of course_lesson or formation_lesson must be set (never both).
+    11→    11→"""
+    12→    12→
+    13→    13→from __future__ import annotations
+    14→    14→
+    15→    15→from django.conf import settings
+    16→    16→from django.core.exceptions import ValidationError
+    17→    17→from django.db import models
+    18→    18→from django.utils.text import slugify
+    19→    19→
+    20→    20→
+    21→    21→# =============================================================================
+    22→    22→# Video helpers (used by templatetags + templates)
+    23→    23→# =============================================================================
+    24→    24→
+    25→    25→def extraire_id_youtube(url: str | None):
+    26→    26→    """Extract YouTube video ID from common URL formats."""
+    27→    27→    if not url or 'vimeo' in (url or '').lower():
+    28→    28→        return None
+    29→    29→    url = url.strip()
+    30→    30→    if 'youtu.be/' in url:
+    31→    31→        return url.split('youtu.be/')[-1].split('?')[0].strip('/')
+    32→    32→    if '/shorts/' in url:
+    33→    33→        return url.split('/shorts/')[-1].split('?')[0].strip('/')
+    34→    34→    if '/embed/' in url:
+    35→    35→        return url.split('/embed/')[-1].split('?')[0].strip('/')
+    36→    36→    if 'v=' in url:
+    37→    37→        return url.split('v=')[-1].split('&')[0].strip()
+    38→    38→    return None
+    39→    39→
+    40→    40→
+    41→    41→def convertir_url_youtube(url: str | None):
+    42→    42→    """Convert YouTube/Vimeo URL to embed URL (display-time only)."""
+    43→    43→    if not url:
+    44→    44→        return url
+    45→    45→
+    46→    46→    url = url.strip()
+    47→    47→    u = url.lower()
+    48→    48→
+    49→    49→    # Vimeo
+    50→    50→    if 'vimeo.com' in u:
+    51→    51→        if '/video/' in u:
+    52→    52→            video_id = url.split('/video/')[-1].split('?')[0].split('/')[0]
+    53→    53→        else:
+    54→    54→            video_id = url.split('vimeo.com/')[-1].split('?')[0].split('/')[0]
+    55→    55→        if video_id.isdigit():
+    56→    56→            return f'https://player.vimeo.com/video/{video_id}?color=E8A020&title=0&byline=0'
+    57→    57→        return url
+    58→    58→
+    59→    59→    # YouTube
+    60→    60→    if 'youtube-nocookie.com/embed/' in u:
+    61→    61→        return url
+    62→    62→    if 'youtube.com/embed/' in u:
+    63→    63→        video_id = url.split('/embed/')[-1].split('?')[0].strip('/')
+    64→    64→        return f'https://www.youtube-nocookie.com/embed/{video_id}?rel=0&modestbranding=1'
+    65→    65→    if 'youtu.be/' in u:
+    66→    66→        video_id = url.split('youtu.be/')[-1].split('?')[0].strip('/')
+    67→    67→        return f'https://www.youtube-nocookie.com/embed/{video_id}?rel=0&modestbranding=1'
+    68→    68→    if '/shorts/' in u:
+    69→    69→        video_id = url.split('/shorts/')[-1].split('?')[0].strip('/')
+    70→    70→        return f'https://www.youtube-nocookie.com/embed/{video_id}?rel=0&modestbranding=1'
+    71→    71→    if 'youtube.com' in u and 'v=' in url:
+    72→    72→        video_id = url.split('v=')[-1].split('&')[0].strip()
+    73→    73→        return f'https://www.youtube-nocookie.com/embed/{video_id}?rel=0&modestbranding=1'
+    74→    74→    return url
+    75→    75→
+    76→    76→
+    77→    77→# =============================================================================
+    78→    78→# Course models (SPEC)
+    79→    79→# =============================================================================
+    80→    80→
+    81→    81→class Course(models.Model):
+    82→    82→    STATUS = [
+    83→    83→        ('draft', 'Brouillon'),
+    84→    84→        ('published', 'Publié'),
+    85→    85→        ('archived', 'Archivé'),
+    86→    86→    ]
+    87→    87→    LEVELS = [
+    88→    88→        ('debutant', 'Débutant'),
+    89→    89→        ('intermediaire', 'Intermédiaire'),
+    90→    90→        ('avance', 'Avancé'),
+    91→    91→    ]
+    92→    92→    CATEGORIES = [
+    93→    93→        ('mathematiques', 'Mathématiques'),
+    94→    94→        ('physique', 'Physique'),
+    95→    95→        ('informatique', 'Informatique'),
+    96→    96→        ('python', 'Python'),
+    97→    97→        ('ia', 'Intelligence Artificielle'),
+    98→    98→        ('data', 'Data Science'),
+    99→    99→        ('autre', 'Autre'),
+   100→   100→    ]
+   101→   101→
+   102→   102→    title = models.CharField(max_length=300)
+   103→   103→    slug = models.SlugField(unique=True, blank=True)
+   104→   104→    description = models.TextField(blank=True)
+   105→   105→    short_description = models.CharField(max_length=300, blank=True)
+   106→   106→    category = models.CharField(max_length=50, choices=CATEGORIES, default='autre')
+   107→   107→    level = models.CharField(max_length=20, choices=LEVELS, default='debutant')
+   108→   108→    language = models.CharField(
+   109→   109→        max_length=10,
+   110→   110→        choices=[('fr', 'Français'), ('en', 'English')],
+   111→   111→        default='fr',
+   112→   112→    )
+   113→   113→    price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+   114→   114→    is_free = models.BooleanField(default=True)
+   115→   115→    thumbnail = models.ImageField(upload_to='courses/thumbnails/', blank=True, null=True)
+   116→   116→    status = models.CharField(max_length=20, choices=STATUS, default='draft')
+   117→   117→    created_by = models.ForeignKey(
+   118→   118→        settings.AUTH_USER_MODEL,
+   119→   119→        on_delete=models.SET_NULL,
+   120→   120→        null=True,
+   121→   121→        related_name='created_courses',
+   122→   122→    )
+   123→   123→    created_at = models.DateTimeField(auto_now_add=True)
+   124→   124→    updated_at = models.DateTimeField(auto_now=True)
+   125→   125→    objectives = models.TextField(blank=True)
+   126→   126→    prerequisites = models.TextField(blank=True)
+   127→   127→    estimated_hours = models.DecimalField(max_digits=5, decimal_places=1, default=0)
+   128→   128→
+   129→   129→    class Meta:
+   130→   130→        verbose_name = 'Cours'
+   131→   131→        verbose_name_plural = 'Cours'
+   132→   132→
+   133→   133→    def __str__(self):
+   134→   134→        return self.title
+   135→   135→
+   136→   136→    def save(self, *args, **kwargs):
+   137→   137→        if not self.slug:
+   138→   138→            base = slugify(self.title)
+   139→   139→            slug = base
+   140→   140→            n = 1
+   141→   141→            while Course.objects.filter(slug=slug).exclude(pk=self.pk).exists():
+   142→   142→                slug = f'{base}-{n}'
+   143→   143→                n += 1
+   144→   144→            self.slug = slug
+   145→   145→        super().save(*args, **kwargs)
+   146→   146→
+   147→   147→
+   148→   148→class CourseModule(models.Model):
+   149→   149→    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='modules')
+   150→   150→    title = models.CharField(max_length=300)
+   151→   151→    description = models.TextField(blank=True)
+   152→   152→    order = models.PositiveIntegerField(default=0)
+   153→   153→    is_active = models.BooleanField(default=True)
+   154→   154→
+   155→   155→    class Meta:
+   156→   156→        ordering = ['order']
+   157→   157→        verbose_name = 'Module'
+   158→   158→        verbose_name_plural = 'Modules'
+   159→   159→
+   160→   160→    def __str__(self):
+   161→   161→        return f'{self.course.title} — {self.title}'
+   162→   162→
+   163→   163→
+   164→   164→class CourseLesson(models.Model):
+   165→   165→    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='lessons')
+   166→   166→    module = models.ForeignKey(
+   167→   167→        CourseModule,
+   168→   168→        on_delete=models.SET_NULL,
+   169→   169→        related_name='lessons',
+   170→   170→        null=True,
+   171→   171→        blank=True,
+   172→   172→    )
+   173→   173→    title = models.CharField(max_length=300)
+   174→   174→    slug = models.SlugField(blank=True)
+   175→   175→    order = models.PositiveIntegerField(default=0)
+   176→   176→    is_free_preview = models.BooleanField(default=False)
+   177→   177→    is_active = models.BooleanField(default=True)
+   178→   178→    estimated_minutes = models.PositiveIntegerField(default=10)
+   179→   179→
+   180→   180→    class Meta:
+   181→   181→        ordering = ['order']
+   182→   182→        verbose_name = 'Leçon'
+   183→   183→        verbose_name_plural = 'Leçons'
+   184→   184→
+   185→   185→    def __str__(self):
+   186→   186→        return f'{self.course.title} — {self.title}'
+   187→   187→
+   188→   188→    def save(self, *args, **kwargs):
+   189→   189→        if not self.slug:
+   190→   190→            self.slug = slugify(self.title)
+   191→   191→        super().save(*args, **kwargs)
+   192→   192→
+   193→   193→
+   194→   194→# =============================================================================
+   195→   195→# Enrollment + lesson completion (kept for platform compatibility)
+   196→   196→# =============================================================================
+   197→   197→
+   198→   198→class InscriptionCours(models.Model):
+   199→   199→    """Course enrollment (legacy-compatible name used across the app)."""
+   200→   200→    etudiant = models.ForeignKey(
+   201→   201→        settings.AUTH_USER_MODEL,
+   202→   202→        on_delete=models.CASCADE,
+   203→   203→        related_name='inscriptions',
+   204→   204→    )
+   205→   205→    course = models.ForeignKey(
+   206→   206→        Course,
+   207→   207→        on_delete=models.CASCADE,
+   208→   208→        related_name='inscriptions',
+   209→   209→    )
+   210→   210→    date_inscription = models.DateTimeField(auto_now_add=True)
+   211→   211→    progression = models.IntegerField(default=0)
+   212→   212→    est_termine = models.BooleanField(default=False)
+   213→   213→    date_fin = models.DateTimeField(null=True, blank=True)
+   214→   214→
+   215→   215→    @property
+   216→   216→    def cours(self):  # backward-compatible template usage
+   217→   217→        return self.course
+   218→   218→
+   219→   219→    class Meta:
+   220→   220→        unique_together = ('etudiant', 'course')
+   221→   221→        ordering = ['-date_inscription']
+   222→   222→
+   223→   223→
+   224→   224→class ProgressionLecon(models.Model):
+   225→   225→    """Tracks completion of a CourseLesson by a student."""
+   226→   226→    etudiant = models.ForeignKey(
+   227→   227→        settings.AUTH_USER_MODEL,
+   228→   228→        on_delete=models.CASCADE,
+   229→   229→        related_name='progressions_lecons',
+   230→   230→    )
+   231→   231→    course_lesson = models.ForeignKey(
+   232→   232→        CourseLesson,
+   233→   233→        on_delete=models.CASCADE,
+   234→   234→        related_name='progressions',
+   235→   235→    )
+   236→   236→    date_completion = models.DateTimeField(auto_now_add=True)
+   237→   237→
+   238→   238→    class Meta:
+   239→   239→        unique_together = ('etudiant', 'course_lesson')
+   240→   240→
+   241→   241→
+   242→   242→class Certificat(models.Model):
+   243→   243→    """Legacy-compatible certificate model (used by Django admin + PDF generator)."""
+   244→   244→    inscription = models.OneToOneField(
+   245→   245→        InscriptionCours,
+   246→   246→        on_delete=models.CASCADE,
+   247→   247→        related_name='certificat',
+   248→   248→    )
+   249→   249→    date_emission = models.DateTimeField(auto_now_add=True)
+   250→   250→    code_verification = models.CharField(max_length=64, unique=True)
+   251→   251→
+   252→   252→    def save(self, *args, **kwargs):
+   253→   253→        if not self.code_verification:
+   254→   254→            # short deterministic-ish token without pulling in extra deps
+   255→   255→            self.code_verification = slugify(f'{self.inscription_id}-{self.date_emission}')[:64] or 'cert'
+   256→   256→        super().save(*args, **kwargs)
+   257→   257→
+   258→   258→    def get_nom_fichier(self):
+   259→   259→        """Return a safe filename for the PDF certificate download."""
+   260→   260→        nom = slugify(self.inscription.etudiant.get_full_name() or self.inscription.etudiant.username)
+   261→   261→        cours = slugify(self.inscription.course.title)
+   262→   262→        return f'certificat-{nom}-{cours}.pdf'
+   263→   263→
+   264→   264→    class Meta:
+   265→   265→        ordering = ['-date_emission']
+   266→   266→
+   267→   267→
+   268→   268→# Backward-compatible aliases (used across templates/views while rebuilding)
+   269→   269→Cours = Course
+   270→   270→Module = CourseModule
+   271→   271→Lecon = CourseLesson
+   272→   272→
+   273→   273→
+   274→   274→# =============================================================================
+   275→   275→# Lesson blocks (SPEC)
+   276→   276→# =============================================================================
+   277→   277→
+   278→   278→class LessonBlock(models.Model):
+   279→   279→    BLOCK_TYPES = [
+   280→   280→        ('text', 'Texte'),
+   281→   281→        ('video', 'Vidéo'),
+   282→   282→        ('sandbox', 'Sandbox Python'),
+   283→   283→        ('code_exercise', 'Exercice code'),
+   284→   284→        ('mcq', 'QCM'),
+   285→   285→        ('fill_blank', 'Texte à trous'),
+   286→   286→        ('true_false', 'Vrai ou Faux'),
+   287→   287→        ('code_order', 'Ordonner le code'),
+   288→   288→        ('matching', 'Associations'),
+   289→   289→        ('short_answer', 'Réponse courte'),
+   290→   290→    ]
+   291→   291→
+   292→   292→    # Exactly one of these is set (Rule 5)
+   293→   293→    course_lesson = models.ForeignKey(
+   294→   294→        'CourseLesson',
+   295→   295→        on_delete=models.CASCADE,
+   296→   296→        related_name='blocks',
+   297→   297→        null=True,
+   298→   298→        blank=True,
+   299→   299→    )
+   300→   300→    formation_lesson = models.ForeignKey(
+   301→   301→        'formation.FormationLesson',
+   302→   302→        on_delete=models.CASCADE,
+   303→   303→        related_name='blocks',
+   304→   304→        null=True,
+   305→   305→        blank=True,
+   306→   306→    )
+   307→   307→    block_type = models.CharField(max_length=30, choices=BLOCK_TYPES)
+   308→   308→    order = models.PositiveIntegerField(default=0)
+   309→   309→
+   310→   310→    # TEXT
+   311→   311→    text_content = models.TextField(blank=True)
+   312→   312→
+   313→   313→    # VIDEO
+   314→   314→    video_url = models.URLField(blank=True, null=True)
+   315→   315→    video_caption = models.CharField(max_length=300, blank=True)
+   316→   316→
+   317→   317→    # SANDBOX
+   318→   318→    sandbox_title = models.CharField(max_length=300, blank=True, default='Essaie toi-même')
+   319→   319→    sandbox_initial_code = models.TextField(blank=True, default='# Écris ton code ici\n')
+   320→   320→
+   321→   321→    # Exercise foreign keys — nullable, only one used
+   322→   322→    code_exercise = models.ForeignKey(
+   323→   323→        'CodeExercise',
+   324→   324→        on_delete=models.SET_NULL,
+   325→   325→        null=True,
+   326→   326→        blank=True,
+   327→   327→        related_name='lesson_blocks',
+   328→   328→    )
+   329→   329→    mcq_exercise = models.ForeignKey(
+   330→   330→        'MCQExercise',
+   331→   331→        on_delete=models.SET_NULL,
+   332→   332→        null=True,
+   333→   333→        blank=True,
+   334→   334→        related_name='lesson_blocks',
+   335→   335→    )
+   336→   336→    fill_blank = models.ForeignKey(
+   337→   337→        'FillBlankExercise',
+   338→   338→        on_delete=models.SET_NULL,
+   339→   339→        null=True,
+   340→   340→        blank=True,
+   341→   341→        related_name='lesson_blocks',
+   342→   342→    )
+   343→   343→    true_false = models.ForeignKey(
+   344→   344→        'TrueFalseExercise',
+   345→   345→        on_delete=models.SET_NULL,
+   346→   346→        null=True,
+   347→   347→        blank=True,
+   348→   348→        related_name='lesson_blocks',
+   349→   349→    )
+   350→   350→    code_order = models.ForeignKey(
+   351→   351→        'CodeOrderExercise',
+   352→   352→        on_delete=models.SET_NULL,
+   353→   353→        null=True,
+   354→   354→        blank=True,
+   355→   355→        related_name='lesson_blocks',
+   356→   356→    )
+   357→   357→    matching = models.ForeignKey(
+   358→   358→        'MatchingExercise',
+   359→   359→        on_delete=models.SET_NULL,
+   360→   360→        null=True,
+   361→   361→        blank=True,
+   362→   362→        related_name='lesson_blocks',
+   363→   363→    )
+   364→   364→    short_answer = models.ForeignKey(
+   365→   365→        'ShortAnswerExercise',
+   366→   366→        on_delete=models.SET_NULL,
+   367→   367→        null=True,
+   368→   368→        blank=True,
+   369→   369→        related_name='lesson_blocks',
+   370→   370→    )
+   371→   371→
+   372→   372→    class Meta:
+   373→   373→        ordering = ['order']
+   374→   374→
+   375→   375→    def clean(self):
+   376→   376→        if self.course_lesson and self.formation_lesson:
+   377→   377→            raise ValidationError('Set course_lesson OR formation_lesson, not both.')
+   378→   378→        if not self.course_lesson and not self.formation_lesson:
+   379→   379→            raise ValidationError('Must set course_lesson or formation_lesson.')
+   380→   380→
+   381→   381→    def get_payload(self, user=None, preview=False):
+   382→   382→        """Build a sanitised dict for the lesson_blocks_render.html template.
+   383→   383→
+   384→   384→        Never includes solution_code or test_code in plain text —
+   385→   385→        test_code is base64-encoded for client-side evaluation only.
+   386→   386→        """
+   387→   387→        import base64
+   388→   388→
+   389→   389→        data = {
+   390→   390→            'id': self.id,
+   391→   391→            'type': self.block_type,
+   392→   392→            'order': self.order,
+   393→   393→        }
+   394→   394→
+   395→   395→        if self.block_type == 'text':
+   396→   396→            data['text_content'] = self.text_content or ''
+   397→   397→
+   398→   398→        elif self.block_type == 'video':
+   399→   399→            data['embed_url'] = self._embed_url(self.video_url)
+   400→   400→            data['video_caption'] = self.video_caption or ''
+   401→   401→
+   402→   402→        elif self.block_type == 'sandbox':
+   403→   403→            data['title'] = self.sandbox_title or 'Essaie toi-même'
+   404→   404→            data['initial_code'] = self.sandbox_initial_code or ''
+   405→   405→
+   406→   406→        elif self.block_type == 'code_exercise':
+   407→   407→            ex = self.code_exercise
+   408→   408→            if ex:
+   409→   409→                data['exercise_id'] = ex.id
+   410→   410→                data['id'] = ex.id
+   411→   411→                data['title'] = ex.title
+   412→   412→                data['instructions'] = ex.instructions or ''
+   413→   413→                data['difficulty'] = ex.difficulty
+   414→   414→                data['points'] = ex.points
+   415→   415→                data['hint'] = ex.hint or ''
+   416→   416→                data['max_attempts'] = ex.max_attempts
+   417→   417→                data['starter_code'] = ex.starter_code or ''
+   418→   418→                data['expected_output'] = ex.expected_output or ''
+   419→   419→                data['evaluation_mode'] = ex.evaluation_mode
+   420→   420→                data['test_code_b64'] = base64.b64encode(
+   421→   421→                    (ex.test_code or '').encode()
+   422→   422→                ).decode() if ex.test_code else ''
+   423→   423→                data['order'] = ex.order
+   424→   424→                data['is_solved'] = False
+   425→   425→                data['points_earned'] = 0
+   426→   426→                data['attempts_used'] = 0
+   427→   427→                if user and not preview:
+   428→   428→                    from cours.models import StudentProgress, ExerciseAttempt
+   429→   429→                    progress = StudentProgress.objects.filter(
+   430→   430→                        student=user, exercise_type='code',
+   431→   431→                        exercise_id=ex.id
+   432→   432→                    ).first()
+   433→   433→                    if progress:
+   434→   434→                        data['is_solved'] = progress.is_solved
+   435→   435→                        data['points_earned'] = progress.points_earned
+   436→   436→                    data['attempts_used'] = ExerciseAttempt.objects.filter(
+   437→   437→                        exercise_type='code', exercise_id=ex.id, student=user
+   438→   438→                    ).count()
+   439→   439→
+   440→   440→        elif self.block_type == 'mcq':
+   441→   441→            ex = self.mcq_exercise
+   442→   442→            if ex:
+   443→   443→                data['mcq_id'] = ex.id
+   444→   444→                data['mcq_title'] = ex.title
+   445→   445→                data['title'] = ex.title
+   446→   446→                data['question'] = ex.question or ''
+   447→   447→                data['hint'] = ex.hint or ''
+   448→   448→                data['allow_multiple'] = ex.allow_multiple_correct
+   449→   449→                data['shuffle'] = ex.shuffle_choices
+   450→   450→                data['max_attempts'] = ex.max_attempts
+   451→   451→                data['points'] = ex.points
+   452→   452→                data['difficulty'] = ex.difficulty
+   453→   453→                data['explanation'] = ''  # hidden until solved/exhausted
+   454→   454→                data['is_solved'] = False
+   455→   455→                data['points_earned'] = 0
+   456→   456→                data['attempts_used'] = 0
+   457→   457→                data['correct_ids'] = []
+   458→   458→                data['choices'] = [
+   459→   459→                    {'id': c.id, 'text': c.text, 'order': c.order}
+   460→   460→                    for c in ex.choices.all().order_by('order')
+   461→   461→                ]
+   462→   462→                if user and not preview:
+   463→   463→                    from cours.models import StudentProgress, ExerciseAttempt
+   464→   464→                    progress = StudentProgress.objects.filter(
+   465→   465→                        student=user, exercise_type='mcq',
+   466→   466→                        exercise_id=ex.id
+   467→   467→                    ).first()
+   468→   468→                    if progress:
+   469→   469→                        data['is_solved'] = progress.is_solved
+   470→   470→                        data['points_earned'] = progress.points_earned
+   471→   471→                    data['attempts_used'] = ExerciseAttempt.objects.filter(
+   472→   472→                        exercise_type='mcq', exercise_id=ex.id, student=user
+   473→   473→                    ).count()
+   474→   474→                    # Reveal correct answers if solved or attempts exhausted
+   475→   475→                    if data['is_solved'] or (ex.max_attempts > 0 and data['attempts_used'] >= ex.max_attempts):
+   476→   476→                        data['correct_ids'] = [c.id for c in ex.choices.filter(is_correct=True)]
+   477→   477→                        data['explanation'] = ex.explanation or ''
+   478→   478→
+   479→   479→        elif self.block_type == 'fill_blank':
+   480→   480→            ex = self.fill_blank
+   481→   481→            if ex:
+   482→   482→                data['fill_blank_id'] = ex.id
+   483→   483→                data['title'] = ex.title
+   484→   484→                data['text_with_blanks'] = ex.text_with_blanks or ''
+   485→   485→                data['text_rendered'] = ex.text_with_blanks or ''
+   486→   486→                data['blank_count'] = len(ex.answers) if isinstance(ex.answers, dict) else 0
+   487→   487→                data['points'] = ex.points
+   488→   488→                data['difficulty'] = ex.difficulty
+   489→   489→                data['hint'] = ex.hint or ''
+   490→   490→                data['max_attempts'] = ex.max_attempts
+   491→   491→                data['is_solved'] = False
+   492→   492→                data['attempts_used'] = 0
+   493→   493→                if user and not preview:
+   494→   494→                    from cours.models import StudentProgress, ExerciseAttempt
+   495→   495→                    progress = StudentProgress.objects.filter(
+   496→   496→                        student=user, exercise_type='fill_blank',
+   497→   497→                        exercise_id=ex.id
+   498→   498→                    ).first()
+   499→   499→                    if progress:
+   500→   500→                        data['is_solved'] = progress.is_solved
+   501→   501→                    data['attempts_used'] = ExerciseAttempt.objects.filter(
+   502→   502→                        exercise_type='fill_blank', exercise_id=ex.id, student=user
+   503→   503→                    ).count()
+   504→   504→
+   505→   505→        elif self.block_type == 'true_false':
+   506→   506→            ex = self.true_false
+   507→   507→            if ex:
+   508→   508→                data['true_false_id'] = ex.id
+   509→   509→                data['title'] = ex.title
+   510→   510→                data['statements'] = ex.statements or []
+   511→   511→                data['points_per_statement'] = ex.points_per_statement
+   512→   512→                data['points'] = ex.points
+   513→   513→                data['difficulty'] = ex.difficulty
+   514→   514→                data['hint'] = ex.hint or ''
+   515→   515→                data['max_attempts'] = ex.max_attempts
+   516→   516→                data['is_solved'] = False
+   517→   517→                data['attempts_used'] = 0
+   518→   518→                if user and not preview:
+   519→   519→                    from cours.models import StudentProgress, ExerciseAttempt
+   520→   520→                    progress = StudentProgress.objects.filter(
+   521→   521→                        student=user, exercise_type='true_false',
+   522→   522→                        exercise_id=ex.id
+   523→   523→                    ).first()
+   524→   524→                    if progress:
+   525→   525→                        data['is_solved'] = progress.is_solved
+   526→   526→                    data['attempts_used'] = ExerciseAttempt.objects.filter(
+   527→   527→                        exercise_type='true_false', exercise_id=ex.id, student=user
+   528→   528→                    ).count()
+   529→   529→
+   530→   530→        elif self.block_type == 'code_order':
+   531→   531→            ex = self.code_order
+   532→   532→            if ex:
+   533→   533→                data['code_order_id'] = ex.id
+   534→   534→                data['title'] = ex.title
+   535→   535→                data['instructions'] = ex.instructions or ''
+   536→   536→                data['correct_order'] = ex.correct_order or []
+   537→   537→                data['distractor_lines'] = ex.distractor_lines or []
+   538→   538→                data['points'] = ex.points
+   539→   539→                data['difficulty'] = ex.difficulty
+   540→   540→                data['hint'] = ex.hint or ''
+   541→   541→                data['is_solved'] = False
+   542→   542→                data['attempts_used'] = 0
+   543→   543→
+   544→   544→        elif self.block_type == 'matching':
+   545→   545→            ex = self.matching
+   546→   546→            if ex:
+   547→   547→                data['matching_id'] = ex.id
+   548→   548→                data['title'] = ex.title
+   549→   549→                data['instructions'] = ex.instructions or ''
+   550→   550→                data['pairs'] = ex.pairs or []
+   551→   551→                data['points'] = ex.points
+   552→   552→                data['difficulty'] = ex.difficulty
+   553→   553→                data['hint'] = ex.hint or ''
+   554→   554→                data['is_solved'] = False
+   555→   555→                data['attempts_used'] = 0
+   556→   556→
+   557→   557→        elif self.block_type == 'short_answer':
+   558→   558→            ex = self.short_answer
+   559→   559→            if ex:
+   560→   560→                data['short_answer_id'] = ex.id
+   561→   561→                data['title'] = ex.title
+   562→   562→                data['instructions'] = ex.instructions or ''
+   563→   563→                data['points'] = ex.points
+   564→   564→                data['difficulty'] = ex.difficulty
+   565→   565→                data['hint'] = ex.hint or ''
+   566→   566→                data['max_attempts'] = ex.max_attempts
+   567→   567→                data['is_solved'] = False
+   568→   568→                data['attempts_used'] = 0
+   569→   569→
+   570→   570→        return data
+   571→   571→
+   572→   572→    @staticmethod
+   573→   573→    def _embed_url(url):
+   574→   574→        """Convert YouTube/Vimeo URLs to embeddable iframe URLs."""
+   575→   575→        if not url:
+   576→   576→            return ''
+   577→   577→        u = url.strip()
+   578→   578→        if 'youtube.com/watch' in u and 'v=' in u:
+   579→   579→            vid = u.split('v=', 1)[1].split('&', 1)[0]
+   580→   580→            return f'https://www.youtube.com/embed/{vid}'
+   581→   581→        if 'youtu.be/' in u:
+   582→   582→            vid = u.split('youtu.be/', 1)[1].split('?', 1)[0]
+   583→   583→            return f'https://www.youtube.com/embed/{vid}'
+   584→   584→        if 'vimeo.com/' in u and '/embed/' not in u:
+   585→   585→            vid = u.rstrip('/').split('/')[-1]
+   586→   586→            return f'https://player.vimeo.com/video/{vid}'
+   587→   587→        return u
+   588→   588→
+   589→   589→
+   590→   590→# =============================================================================
+   591→   591→# Exercises (SPEC)
+   592→   592→# =============================================================================
+   593→   593→
+   594→   594→class BaseExercise(models.Model):
+   595→   595→    DIFFICULTY = [
+   596→   596→        ('easy', 'Facile'),
+   597→   597→        ('medium', 'Moyen'),
+   598→   598→        ('hard', 'Difficile'),
+   599→   599→    ]
+   600→   600→
+   601→   601→    # Exactly one is set (Rule 5)
+   602→   602→    course_lesson = models.ForeignKey(
+   603→   603→        'cours.CourseLesson',
+   604→   604→        on_delete=models.CASCADE,
+   605→   605→        null=True,
+   606→   606→        blank=True,
+   607→   607→        related_name='%(class)s_set',
+   608→   608→    )
+   609→   609→    formation_lesson = models.ForeignKey(
+   610→   610→        'formation.FormationLesson',
+   611→   611→        on_delete=models.CASCADE,
+   612→   612→        null=True,
+   613→   613→        blank=True,
+   614→   614→        related_name='%(class)s_set',
+   615→   615→    )
+   616→   616→    title = models.CharField(max_length=300)
+   617→   617→    instructions = models.TextField(blank=True, help_text='Markdown + LaTeX + HTML')
+   618→   618→    difficulty = models.CharField(max_length=10, choices=DIFFICULTY, default='easy')
+   619→   619→    points = models.IntegerField(default=5)
+   620→   620→    max_attempts = models.IntegerField(default=0, help_text='0 = illimité')
+   621→   621→    hint = models.TextField(blank=True)
+   622→   622→    explanation = models.TextField(blank=True)
+   623→   623→    order = models.IntegerField(default=0)
+   624→   624→    is_active = models.BooleanField(default=True)
+   625→   625→    created_by = models.ForeignKey(
+   626→   626→        settings.AUTH_USER_MODEL,
+   627→   627→        on_delete=models.SET_NULL,
+   628→   628→        null=True,
+   629→   629→        blank=True,
+   630→   630→        related_name='%(class)s_created',
+   631→   631→    )
+   632→   632→    created_at = models.DateTimeField(auto_now_add=True)
+   633→   633→
+   634→   634→    class Meta:
+   635→   635→        abstract = True
+   636→   636→
+   637→   637→    def clean(self):
+   638→   638→        if self.course_lesson and self.formation_lesson:
+   639→   639→            raise ValidationError('Set course_lesson OR formation_lesson, not both.')
+   640→   640→        if not self.course_lesson and not self.formation_lesson:
+   641→   641→            raise ValidationError('Must set course_lesson or formation_lesson.')
+   642→   642→
+   643→   643→    def __str__(self):
+   644→   644→        return self.title
+   645→   645→
+   646→   646→
+   647→   647→class CodeExercise(BaseExercise):
+   648→   648→    EVAL_MODES = [
+   649→   649→        ('exact', 'Output exact'),
+   650→   650→        ('contains', 'Output contient'),
+   651→   651→        ('tests', 'Tests unitaires'),
+   652→   652→    ]
+   653→   653→    starter_code = models.TextField(default='# Écris ton code ici\n')
+   654→   654→    solution_code = models.TextField(default='')
+   655→   655→    expected_output = models.TextField(blank=True)
+   656→   656→    test_code = models.TextField(blank=True, help_text='assert statements. Jamais envoyé au navigateur.')
+   657→   657→    evaluation_mode = models.CharField(max_length=20, choices=EVAL_MODES, default='exact')
+   658→   658→
+   659→   659→    class Meta:
+   660→   660→        verbose_name = 'Exercice code'
+   661→   661→
+   662→   662→
+   663→   663→class MCQExercise(BaseExercise):
+   664→   664→    question = models.TextField(help_text='Markdown + LaTeX')
+   665→   665→    allow_multiple_correct = models.BooleanField(default=False)
+   666→   666→    shuffle_choices = models.BooleanField(default=True)
+   667→   667→
+   668→   668→    class Meta:
+   669→   669→        verbose_name = 'QCM'
+   670→   670→
+   671→   671→
+   672→   672→class MCQChoice(models.Model):
+   673→   673→    exercise = models.ForeignKey(MCQExercise, on_delete=models.CASCADE, related_name='choices')
+   674→   674→    text = models.TextField()
+   675→   675→    is_correct = models.BooleanField(default=False)
+   676→   676→    feedback = models.TextField(blank=True)
+   677→   677→    order = models.PositiveIntegerField(default=0)
+   678→   678→
+   679→   679→    class Meta:
+   680→   680→        ordering = ['order']
+   681→   681→
+   682→   682→
+   683→   683→class FillBlankExercise(BaseExercise):
+   684→   684→    text_with_blanks = models.TextField()
+   685→   685→    answers = models.JSONField(default=dict)
+   686→   686→    case_sensitive = models.BooleanField(default=False)
+   687→   687→
+   688→   688→    class Meta:
+   689→   689→        verbose_name = 'Texte à trous'
+   690→   690→
+   691→   691→
+   692→   692→class TrueFalseExercise(BaseExercise):
+   693→   693→    statements = models.JSONField(default=list)
+   694→   694→    points_per_statement = models.IntegerField(default=2)
+   695→   695→
+   696→   696→    class Meta:
+   697→   697→        verbose_name = 'Vrai ou Faux'
+   698→   698→
+   699→   699→
+   700→   700→class CodeOrderExercise(BaseExercise):
+   701→   701→    correct_order = models.JSONField(default=list)
+   702→   702→    distractor_lines = models.JSONField(default=list, blank=True)
+   703→   703→
+   704→   704→    class Meta:
+   705→   705→        verbose_name = 'Ordonner le code'
+   706→   706→
+   707→   707→
+   708→   708→class MatchingExercise(BaseExercise):
+   709→   709→    pairs = models.JSONField(default=list)
+   710→   710→
+   711→   711→    class Meta:
+   712→   712→        verbose_name = 'Associations'
+   713→   713→
+   714→   714→
+   715→   715→class ShortAnswerExercise(BaseExercise):
+   716→   716→    question = models.TextField(help_text='Markdown + LaTeX')
+   717→   717→    accepted_answers = models.JSONField(default=list)
+   718→   718→    case_sensitive = models.BooleanField(default=False)
+   719→   719→    is_code_answer = models.BooleanField(default=False)
+   720→   720→
+   721→   721→    class Meta:
+   722→   722→        verbose_name = 'Réponse courte'
+   723→   723→
+   724→   724→
+   725→   725→# =============================================================================
+   726→   726→# Student progress (SPEC)
+   727→   727→# =============================================================================
+   728→   728→
+   729→   729→class ExerciseAttempt(models.Model):
+   730→   730→    EXERCISE_TYPES = [
+   731→   731→        ('code', 'Code'),
+   732→   732→        ('mcq', 'QCM'),
+   733→   733→        ('fill_blank', 'Texte à trous'),
+   734→   734→        ('true_false', 'Vrai/Faux'),
+   735→   735→        ('code_order', 'Ordre code'),
+   736→   736→        ('matching', 'Associations'),
+   737→   737→        ('short_answer', 'Réponse courte'),
+   738→   738→    ]
+   739→   739→
+   740→   740→    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='attempts')
+   741→   741→    exercise_type = models.CharField(max_length=20, choices=EXERCISE_TYPES)
+   742→   742→    exercise_id = models.PositiveIntegerField()
+   743→   743→    attempt_number = models.PositiveIntegerField(default=1)
+   744→   744→    is_correct = models.BooleanField(default=False)
+   745→   745→    points_earned = models.IntegerField(default=0)
+   746→   746→    answer_data = models.JSONField(default=dict)
+   747→   747→    submitted_at = models.DateTimeField(auto_now_add=True)
+   748→   748→
+   749→   749→    class Meta:
+   750→   750→        ordering = ['-submitted_at']
+   751→   751→
+   752→   752→
+   753→   753→class StudentProgress(models.Model):
+   754→   754→    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='progress')
+   755→   755→    exercise_type = models.CharField(max_length=20)
+   756→   756→    exercise_id = models.PositiveIntegerField()
+   757→   757→    is_solved = models.BooleanField(default=False)
+   758→   758→    points_earned = models.IntegerField(default=0)
+   759→   759→    attempts = models.PositiveIntegerField(default=0)
+   760→   760→    solved_at = models.DateTimeField(null=True, blank=True)
+   761→   761→    updated_at = models.DateTimeField(auto_now=True)
+   762→   762→
+   763→   763→    class Meta:
+   764→   764→        unique_together = ('student', 'exercise_type', 'exercise_id')
+   765→   765→
+   766→   766→
+   767→   767→# =============================================================================
+   768→   768→# Sandbox (kept — used by dashboard + admin sandbox)
+   769→   769→# =============================================================================
+   770→   770→
+   771→   771→class UserScript(models.Model):
+   772→   772→    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='saved_scripts')
+   773→   773→    titre = models.CharField(max_length=200, default='Sans titre')
+   774→   774→    code = models.TextField(default='')
+   775→   775→    created_at = models.DateTimeField(auto_now_add=True)
+   776→   776→    updated_at = models.DateTimeField(auto_now=True)
+   777→   777→
+   778→   778→    class Meta:
+   779→   779→        ordering = ['-updated_at']
+   780→   780→
+   781→   781→
