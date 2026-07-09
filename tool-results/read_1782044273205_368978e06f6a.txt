@@ -1,0 +1,1031 @@
+     1→{% extends 'base.html' %}
+     2→{% load i18n sandbox_tags %}
+     3→{% load video_tags %}
+     4→{% block titre %}{{ cours.title }} — Numeria Institute{% endblock %}
+     5→{% block meta_description %}{{ cours.short_description|default:cours.description|truncatechars:160 }}{% endblock %}
+     6→{% block og_titre %}{{ cours.title }} — Numeria Institute{% endblock %}
+     7→{% block og_description %}{{ cours.short_description|default:cours.description|truncatechars:160 }}{% endblock %}
+     8→{% block og_type %}course{% endblock %}
+     9→
+    10→{% block contenu %}
+    11→
+    12→<style>
+    13→/* ── Callout boxes (Udemy-style) ── */
+    14→.callout {
+    15→  border-radius: 0.75rem;
+    16→  padding: 1rem 1.25rem;
+    17→  margin: 1.25rem 0;
+    18→  border-left: 4px solid;
+    19→}
+    20→.callout-header {
+    21→  font-weight: 700;
+    22→  font-size: 0.875rem;
+    23→  margin-bottom: 0.5rem;
+    24→  display: flex;
+    25→  align-items: center;
+    26→  gap: 0.5rem;
+    27→}
+    28→.callout-body { font-size: 0.875rem; line-height: 1.6; }
+    29→.callout-body p { margin: 0.5rem 0; }
+    30→.callout-body code { background: rgba(0,0,0,0.08); padding: 0.125rem 0.375rem; border-radius: 0.25rem; font-size: 0.8rem; }
+    31→.callout-body pre { margin: 0.5rem 0; }
+    32→
+    33→.callout-tip { background: #fffbeb; border-left-color: #f59e0b; }
+    34→.callout-tip .callout-header { color: #92400e; }
+    35→.callout-warning { background: #fef2f2; border-left-color: #ef4444; }
+    36→.callout-warning .callout-header { color: #991b1b; }
+    37→.callout-info { background: #eff6ff; border-left-color: #3b82f6; }
+    38→.callout-info .callout-header { color: #1e40af; }
+    39→.callout-example { background: #f0fdf4; border-left-color: #22c55e; }
+    40→.callout-example .callout-header { color: #166534; }
+    41→.callout-note { background: #f8fafc; border-left-color: #64748b; }
+    42→.callout-note .callout-header { color: #334155; }
+    43→
+    44→/* ── Code blocks (dark terminal style) ── */
+    45→.code-block-wrapper {
+    46→  border-radius: 0.75rem;
+    47→  overflow: hidden;
+    48→  margin: 1.25rem 0;
+    49→  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+    50→}
+    51→.code-block-header {
+    52→  display: flex;
+    53→  align-items: center;
+    54→  justify-content: space-between;
+    55→  padding: 0.5rem 1rem;
+    56→  background: #1e293b;
+    57→  border-bottom: 1px solid #334155;
+    58→}
+    59→.code-block-header span { font-size: 0.75rem; font-family: monospace; color: #94a3b8; display: flex; align-items: center; gap: 0.5rem; }
+    60→.code-block-header button { font-size: 0.75rem; color: #94a3b8; transition: color 0.2s; display: flex; align-items: center; gap: 0.25rem; background: none; border: none; cursor: pointer; }
+    61→.code-block-header button:hover { color: #fff; }
+    62→.code-block-wrapper pre {
+    63→  background: #0f172a !important;
+    64→  color: #e2e8f0 !important;
+    65→  font-family: 'Courier New', monospace;
+    66→  font-size: 0.85rem;
+    67→  padding: 1rem;
+    68→  overflow-x: auto;
+    69→  line-height: 1.6;
+    70→  margin: 0;
+    71→}
+    72→.code-block-wrapper pre code { background: none; padding: 0; font-size: inherit; color: inherit; }
+    73→
+    74→/* ── Lesson content typography ── */
+    75→.lesson-block--text h1 { font-size: 1.75rem; font-weight: 700; color: #1B2A4E; margin-top: 1.5rem; margin-bottom: 0.75rem; font-family: 'Playfair Display', Georgia, serif; }
+    76→.lesson-block--text h2 { font-size: 1.4rem; font-weight: 700; color: #1B2A4E; margin-top: 1.5rem; margin-bottom: 0.5rem; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.25rem; }
+    77→.lesson-block--text h3 { font-size: 1.15rem; font-weight: 600; color: #334155; margin-top: 1rem; margin-bottom: 0.5rem; }
+    78→.lesson-block--text p { margin: 0.75rem 0; line-height: 1.7; }
+    79→.lesson-block--text ul, .lesson-block--text ol { margin: 0.75rem 0; padding-left: 1.5rem; }
+    80→.lesson-block--text li { margin: 0.375rem 0; line-height: 1.6; }
+    81→.lesson-block--text table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+    82→.lesson-block--text th, .lesson-block--text td { border: 1px solid #e2e8f0; padding: 0.5rem 0.75rem; text-align: left; font-size: 0.875rem; }
+    83→.lesson-block--text th { background: #f1f5f9; font-weight: 600; }
+    84→.lesson-block--text code:not(.hljs):not([class*="language-"]) { background: #f1f5f9; color: #1B2A4E; padding: 0.125rem 0.375rem; border-radius: 0.25rem; font-size: 0.85em; font-family: 'Courier New', monospace; }
+    85→.lesson-block--text blockquote { border-left: 4px solid #C9A227; background: #fffbeb; padding: 0.75rem 1rem; margin: 1rem 0; border-radius: 0 0.5rem 0.5rem 0; }
+    86→.lesson-block--text hr { border: none; border-top: 2px solid #e2e8f0; margin: 1.5rem 0; }
+    87→
+    88→/* Dark mode — comprehensive fix for all course page elements */
+    89→.dark .lesson-block--text h1, .dark .lesson-block--text h2 { color: #f1f5f9 !important; }
+    90→.dark .lesson-block--text h3 { color: #cbd5e1 !important; }
+    91→.dark .lesson-block--text p { color: #d1d5db !important; }
+    92→.dark .lesson-block--text li { color: #d1d5db !important; }
+    93→.dark .lesson-block--text td { color: #d1d5db !important; }
+    94→.dark .lesson-block--text th { background: #1e293b !important; color: #e2e8f0 !important; }
+    95→.dark .lesson-block--text th, .dark .lesson-block--text td { border-color: #334155 !important; }
+    96→.dark .lesson-block--text code:not(.hljs) { background: #1e293b !important; color: #7dd3fc !important; }
+    97→.dark .lesson-block--text blockquote { background: #422006 !important; border-left-color: #f59e0b !important; }
+    98→.dark .lesson-block--text hr { border-top-color: #334155 !important; }
+    99→
+   100→/* Dark mode — lesson heading */
+   101→.dark h1.text-numeria-bleu { color: #f1f5f9 !important; }
+   102→.dark h2.text-numeria-bleu { color: #f1f5f9 !important; }
+   103→.dark .text-numeria-bleu { color: #e2e8f0 !important; }
+   104→.dark .text-numeria-or { color: #fbbf24 !important; }
+   105→
+   106→/* Dark mode — sidebar */
+   107→.dark [class*="bg-white"][class*="border-r"] { background-color: #1e293b !important; border-color: #334155 !important; }
+   108→.dark [class*="bg-white"][class*="border-b"] { background-color: #1e293b !important; border-color: #334155 !important; }
+   109→
+   110→/* Dark mode — lesson list items */
+   111→.dark a[href*="lecon="] { background-color: #1e293b !important; border-color: #334155 !important; }
+   112→.dark a[href*="lecon="] .text-gray-700 { color: #e2e8f0 !important; }
+   113→.dark a[href*="lecon="] .text-gray-400 { color: #94a3b8 !important; }
+   114→.dark a[href*="lecon="] .text-gray-500 { color: #94a3b8 !important; }
+   115→.dark a[href*="lecon="] .bg-gray-100 { background-color: #334155 !important; }
+   116→
+   117→/* Dark mode — exercise widgets */
+   118→.dark .mcq-widget { background-color: #1e293b !important; border-color: #334155 !important; }
+   119→.dark .mcq-widget .bg-gray-50 { background-color: #0f172a !important; }
+   120→.dark .mcq-widget .text-gray-800 { color: #e2e8f0 !important; }
+   121→.dark .mcq-widget .text-gray-700 { color: #d1d5db !important; }
+   122→.dark .mcq-widget .text-gray-600 { color: #d1d5db !important; }
+   123→.dark .mcq-widget label { color: #d1d5db !important; }
+   124→.dark .mcq-widget .bg-gray-50 { background-color: #0f172a !important; border-color: #334155 !important; }
+   125→
+   126→.dark [id^="tf-"] { background-color: #1e293b !important; border-color: #334155 !important; }
+   127→.dark [id^="tf-"] .bg-gray-50 { background-color: #0f172a !important; }
+   128→.dark [id^="tf-"] .text-gray-800 { color: #e2e8f0 !important; }
+   129→.dark [id^="tf-"] label { color: #d1d5db !important; }
+   130→
+   131→.dark [id^="fb-"] { background-color: #1e293b !important; border-color: #334155 !important; }
+   132→.dark [id^="fb-"] .bg-gray-50 { background-color: #0f172a !important; }
+   133→.dark [id^="fb-"] .text-gray-800 { color: #e2e8f0 !important; }
+   134→
+   135→/* Dark mode — sandbox widget */
+   136→.dark .sw-root { background-color: #1e293b !important; border-color: #334155 !important; }
+   137→
+   138→/* Dark mode — progress bar area */
+   139→.dark .bg-white\/95 { background-color: rgba(30, 41, 59, 0.95) !important; }
+   140→.dark .border-gray-200 { border-color: #334155 !important; }
+   141→
+   142→/* Dark mode — buttons */
+   143→.dark .bg-numeria-bleu { background-color: #2D4A7C !important; }
+   144→
+   145→/* Dark mode — content area background */
+   146→.dark .bg-numeria-blanc { background-color: #0f172a !important; }
+   147→
+   148→/* Dark mode — course info card */
+   149→.dark .bg-white { background-color: #1e293b !important; }
+   150→.dark .text-gray-800 { color: #e2e8f0 !important; }
+   151→.dark .text-gray-700 { color: #d1d5db !important; }
+   152→.dark .text-gray-600 { color: #d1d5db !important; }
+   153→.dark .text-gray-500 { color: #94a3b8 !important; }
+   154→.dark .border-gray-100 { border-color: #334155 !important; }
+   155→
+   156→/* Dark mode — callouts */
+   157→.dark .callout-tip { background: #422006 !important; }
+   158→.dark .callout-warning { background: #450a0a !important; }
+   159→.dark .callout-info { background: #172554 !important; }
+   160→.dark .callout-example { background: #052e16 !important; }
+   161→.dark .callout-note { background: #1e293b !important; }
+   162→.dark .callout-body { color: #e2e8f0 !important; }
+   163→.dark .callout-body code { background: rgba(255,255,255,0.1) !important; color: #7dd3fc !important; }
+   164→</style>
+   165→
+   166→<script>
+   167→function copyCodeBlock(id) {
+   168→  var el = document.getElementById(id);
+   169→  if (!el) return;
+   170→  var text = el.textContent;
+   171→  navigator.clipboard.writeText(text).then(function() {
+   172→    var btn = el.closest('.code-block-wrapper').querySelector('button');
+   173→    if (btn) { btn.innerHTML = '<svg class="w-3.5 h-3.5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> Copié'; setTimeout(function() { btn.innerHTML = '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copier'; }, 2000); }
+   174→  });
+   175→}
+   176→</script>
+   177→
+   178→<div class="w-full min-h-screen bg-numeria-blanc dark:bg-gray-900 flex flex-col">
+   179→
+   180→    <!-- ===== BARRE DE PROGRESSION EN HAUT ===== -->
+   181→    <div class="bg-white/95 dark:bg-gray-900/95 border-b border-gray-200 dark:border-gray-700 backdrop-blur-xl sticky top-16 z-40 shadow-sm">
+   182→        <div class="w-full px-4 sm:px-8 lg:px-16 py-3">
+   183→            <div class="flex flex-col lg:flex-row items-center gap-4">
+   184→
+   185→                <!-- Lien retour -->
+   186→                <a href="{% url 'cours:catalogue' %}"
+   187→                   class="text-gray-400 hover:text-numeria-bleu dark:hover:text-numeria-or transition-colors flex-shrink-0 text-sm">
+   188→                    ← Catalogue
+   189→                </a>
+   190→
+   191→                <!-- Titre du cours -->
+   192→                <div class="flex-1 min-w-0">
+   193→                    <p class="text-xs text-gray-400 dark:text-gray-500 truncate">{{ cours.title }}</p>
+   194→                    {% if est_inscrit %}
+   195→                    <div class="flex items-center gap-2 mt-1">
+   196→                        <div class="flex-1 bg-gray-200 dark:bg-gray-600 rounded-full h-1.5">
+   197→                            <div class="bg-numeria-or rounded-full h-1.5 transition-all"
+   198→                                 style="width: {{ inscription.progression }}%">
+   199→                            </div>
+   200→                        </div>
+   201→                        <span class="text-xs font-bold text-numeria-or flex-shrink-0">
+   202→                            {{ inscription.progression }}%
+   203→                        </span>
+   204→                    </div>
+   205→                    {% endif %}
+   206→                </div>
+   207→
+   208→                <!-- Statut inscription -->
+   209→                {% if est_inscrit %}
+   210→                <div class="flex items-center gap-3 flex-shrink-0">
+   211→                    <div class="hidden sm:flex items-center gap-2">
+   212→                        <div class="w-24 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+   213→                            <div class="h-full bg-numeria-teal rounded-full transition-all duration-500" style="width: {% widthratio lecons_terminees_count total_lecons 100 %}%;"></div>
+   214→                        </div>
+   215→                        <span class="text-xs text-gray-500 font-medium whitespace-nowrap">{{ lecons_terminees_count }}/{{ total_lecons }}</span>
+   216→                    </div>
+   217→                    <span class="text-xs text-emerald-500 font-bold">
+   218→                        {% if lecons_terminees_count == total_lecons %}✅ {% trans "Terminé" %}{% else %}{{ lecons_terminees_count }}/{{ total_lecons }} {% trans "leçons" %}{% endif %}
+   219→                    </span>
+   220→                </div>
+   221→                {% else %}
+   222→                <form method="POST" action="{% url 'cours:inscrire' cours.id %}">
+   223→                    {% csrf_token %}
+   224→                    <button type="submit"
+   225→                        class="bg-numeria-or text-numeria-bleu font-bold px-4 py-1.5 rounded-lg text-xs hover:bg-yellow-400 transition-colors">
+   226→                        {% if cours.is_free %}{% trans "S'inscrire gratuitement" %}{% else %}{% trans "S'inscrire" %}{% endif %}
+   227→                    </button>
+   228→                </form>
+   229→                {% endif %}
+   230→
+   231→            </div>
+   232→        </div>
+   233→    </div>
+   234→
+   235→    <!-- ===== MESSAGES ===== -->
+   236→    {% if messages %}
+   237→    <div class="w-full px-4 sm:px-8 lg:px-16 mt-3">
+   238→        {% for message in messages %}
+   239→        <div class="p-3 rounded-xl mb-2 text-sm
+   240→            {% if message.tags == 'error' %}bg-red-50 dark:bg-red-900 text-red-700 dark:text-red-200
+   241→            {% elif message.tags == 'warning' %}bg-yellow-50 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-200
+   242→            {% elif message.tags == 'info' %}bg-blue-50 dark:bg-blue-900 text-blue-700 dark:text-blue-200
+   243→            {% else %}bg-green-50 dark:bg-green-900 text-green-700 dark:text-green-200{% endif %}">
+   244→            {{ message }}
+   245→        </div>
+   246→        {% endfor %}
+   247→    </div>
+   248→    {% endif %}
+   249→
+   250→    <!-- ===== CONTENU PRINCIPAL ===== -->
+   251→    <div class="flex flex-col lg:flex-row flex-1">
+   252→
+   253→        <!-- ── SIDEBAR LEÇONS ── -->
+   254→        <div class="lg:w-72 xl:w-80 flex-shrink-0 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 lg:sticky lg:top-28 lg:h-screen lg:overflow-y-auto">
+   255→
+   256→            <!-- Infos cours -->
+   257→            <div class="p-5 border-b border-gray-100 dark:border-gray-700">
+   258→                <div class="flex items-center gap-2 mb-1">
+   259→                    <span class="text-numeria-or text-xs font-bold uppercase tracking-wide">
+   260→                        {{ cours.get_category_display }}
+   261→                    </span>
+   262→                    {% if cours.category == "scolaire" and cours.level %}
+   263→                    <span class="bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 text-xs font-bold px-2 py-0.5 rounded-full">
+   264→                        {{ cours.get_level_display }}
+   265→                    </span>
+   266→                    {% endif %}
+   267→                </div>
+   268→                <h2 class="font-bold text-gray-800 dark:text-gray-100 text-sm leading-snug">
+   269→                    {{ cours.title }}
+   270→                </h2>
+   271→                <p class="text-gray-400 dark:text-gray-500 text-xs mt-1">
+   272→                    {{ cours.get_level_display }} · {{ total_lecons }} leçons
+   273→                </p>
+   274→                
+   275→                <!-- TAGS -->
+   276→                {% if cours.tags.all %}
+   277→                <div class="flex flex-wrap gap-1 mt-3">
+   278→                    {% for tag in cours.tags.all %}
+   279→                    <span class="text-xs font-semibold px-2 py-1 rounded-full text-white"
+   280→                          style="background-color: {{ tag.couleur }}">
+   281→                        {{ tag.nom }}
+   282→                    </span>
+   283→                    {% endfor %}
+   284→                </div>
+   285→                {% endif %}
+   286→                
+   287→                <!-- ÉVALUATION MOYENNE -->
+   288→                {% if cours.note_moyenne %}
+   289→                <div class="mt-3 p-2 bg-gray-50 dark:bg-gray-700 rounded-lg">
+   290→                    <div class="flex items-center gap-2">
+   291→                        <span class="text-xs font-bold text-numeria-or">
+   292→                            ★ {{ cours.note_moyenne|floatformat:1 }}/5
+   293→                        </span>
+   294→                        <span class="text-xs text-gray-500 dark:text-gray-400">
+   295→                            ({{ cours.evaluations.count }} avis)
+   296→                        </span>
+   297→                    </div>
+   298→                </div>
+   299→                {% endif %}
+   300→                
+   301→                <!-- CERTIFICAT -->
+   302→                {% if user.is_authenticated and certificat_utilisateur %}
+   303→                <div class="mt-3 p-2 bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700 rounded-lg">
+   304→                    <p class="text-xs font-bold text-green-600 dark:text-green-400">
+   305→                        ✅ Certificat obtenu
+   306→                    </p>
+   307→                    <p class="text-xs text-green-600 dark:text-green-400">
+   308→                        {{ certificat_utilisateur.numero_certificat }}
+   309→                    </p>
+   310→                </div>
+   311→                {% endif %}
+   312→            </div>
+   313→            
+   314→            <!-- PRÉREQUIS -->
+   315→            {% if cours.cours_prerequises.all %}
+   316→            <div class="p-5 border-t border-gray-100 dark:border-gray-700 bg-blue-50 dark:bg-blue-900">
+   317→                <p class="text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wide mb-2">
+   318→                    📋 Prérequis
+   319→                </p>
+   320→                <div class="space-y-2">
+   321→                    {% for prereq in cours.cours_prerequises.all %}
+   322→                    <div class="text-xs text-gray-700 dark:text-gray-200">
+   323→                        • {{ prereq.title }}
+   324→                    </div>
+   325→                    {% endfor %}
+   326→                </div>
+   327→            </div>
+   328→            {% endif %}
+   329→
+   330→            <!-- Liste des leçons -->
+   331→            <div class="p-3">
+   332→                <p class="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide px-2 mb-2">
+   333→                    Contenu du cours
+   334→                </p>
+   335→
+   336→                {% for lecon in lecons %}
+   337→                <a href="?lecon={{ lecon.id }}"
+   338→                   class="flex items-center gap-3 p-4 rounded-3xl mb-3 transition-all duration-300 group shadow-sm
+   339→                   {% if lecon_active and lecon.id == lecon_active.id %}
+   340→                       bg-numeria-bleu text-white border border-numeria-bleu/30
+   341→                   {% else %}
+   342→                       bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 hover:border-numeria-teal/20 hover:bg-gray-50 dark:hover:bg-gray-800
+   343→                   {% endif %}">
+   344→
+   345→                    <!-- Icône statut -->
+   346→                    <div class="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-bold shadow-inner
+   347→                        {% if lecon.id in lecons_terminees_ids %}
+   348→                            bg-green-500 text-white
+   349→                        {% elif lecon_active and lecon.id == lecon_active.id %}
+   350→                            bg-white text-numeria-bleu
+   351→                        {% else %}
+   352→                            bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400
+   353→                        {% endif %}">
+   354→                        {% if lecon.id in lecons_terminees_ids %}
+   355→                            ✓
+   356→                        {% else %}
+   357→                            {{ lecon.order|add:1 }}
+   358→                        {% endif %}
+   359→                    </div>
+   360→
+   361→                    <!-- Titre leçon -->
+   362→                    <div class="flex-1 min-w-0">
+   363→                        <p class="text-sm font-semibold truncate
+   364→                            {% if lecon_active and lecon.id == lecon_active.id %}
+   365→                                text-white
+   366→                            {% elif lecon.id in lecons_terminees_ids %}
+   367→                                text-green-600 dark:text-green-400
+   368→                            {% else %}
+   369→                                text-gray-700 dark:text-gray-200
+   370→                            {% endif %}">
+   371→                            {{ lecon.title }}
+   372→                        </p>
+   373→                        <p class="text-xs mt-1
+   374→                            {% if lecon_active and lecon.id == lecon_active.id %}
+   375→                                text-blue-200
+   376→                            {% else %}
+   377→                                text-gray-400 dark:text-gray-500
+   378→                            {% endif %}">
+   379→                            ⏱ {{ lecon.estimated_minutes }} min
+   380→                        </p>
+   381→                    </div>
+   382→
+   383→                    <span class="hidden sm:inline-flex items-center gap-1 text-xs font-semibold text-gray-400 group-hover:text-numeria-bleu transition-colors">
+   384→                        Voir
+   385→                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+   386→                    </span>
+   387→
+   388→                </a>
+   389→                {% endfor %}
+   390→
+   391→                {% if not est_inscrit %}
+   392→                <div class="p-3 mt-3 bg-numeria-or rounded-xl text-center">
+   393→                    <p class="text-numeria-bleu text-xs font-bold mb-2">
+   394→                        {% trans "Inscris-toi pour accéder aux leçons" %}
+   395→                    </p>
+   396→                    <form method="POST" action="{% url 'cours:inscrire' cours.id %}">
+   397→                        {% csrf_token %}
+   398→                        <button type="submit"
+   399→                            class="w-full bg-numeria-bleu text-white font-bold py-2 rounded-lg text-xs hover:bg-numeria-bleu-fonce transition-colors">
+   400→                            {% if cours.is_free %}{% trans "Commencer gratuitement" %}{% else %}{% trans "S'inscrire" %}{% endif %}
+   401→                        </button>
+   402→                    </form>
+   403→                </div>
+   404→                {% endif %}
+   405→            </div>
+   406→
+   407→        </div>
+   408→
+   409→        <!-- ── ZONE PRINCIPALE ── -->
+   410→        <div class="flex-1 min-w-0">
+   411→
+   412→            {% if lecon_active %}
+   413→
+   414→                <!-- VIDÉO DE LA LEÇON -->
+   415→                {% if lecon_active.video_url %}
+   416→                <div class="w-full bg-black">
+   417→                    <div class="max-w-5xl mx-auto">
+   418→                        {% lecteur_video lecon_active.video_url titre=lecon_active.title %}
+   419→                    </div>
+   420→                </div>
+   421→                {% elif cours.video_url and not est_inscrit %}
+   422→                <!-- Vidéo principale du cours pour les non-inscrits -->
+   423→                <div class="w-full bg-black">
+   424→                    <div class="max-w-5xl mx-auto">
+   425→                        {% lecteur_video cours.video_url titre=cours.title %}
+   426→                    </div>
+   427→                </div>
+   428→                {% endif %}
+   429→
+   430→                <!-- CONTENU DE LA LEÇON -->
+   431→                <div class="max-w-4xl mx-auto px-4 sm:px-8 py-8">
+   432→
+   433→                    <!-- Titre de la leçon -->
+   434→                    <div class="flex items-start justify-between gap-4 mb-6">
+   435→                        <div>
+   436→                            <p class="text-xs text-gray-400 dark:text-gray-500 mb-1">
+   437→                                Leçon {{ lecon_active.order|add:1 }} sur {{ total_lecons }}
+   438→                            </p>
+   439→                            <h1 class="text-2xl sm:text-3xl font-bold text-numeria-bleu dark:text-numeria-or">
+   440→                                {{ lecon_active.title }}
+   441→                            </h1>
+   442→                            <p class="text-gray-400 dark:text-gray-500 text-sm mt-1">
+   443→                                ⏱ {{ lecon_active.estimated_minutes }} minutes
+   444→                                {% if lecon_active.id in lecons_terminees_ids %}
+   445→                                · <span class="text-green-500 font-semibold">✅ Terminée</span>
+   446→                                {% endif %}
+   447→                            </p>
+   448→                        </div>
+   449→                    </div>
+   450→
+   451→                    <!-- ── LESSON BLOCKS (new system) or legacy text ── -->
+   452→                    {% if est_inscrit %}
+   453→                    {% if lesson_blocks %}
+   454→                    {# New block-based rendering #}
+   455→                    {% include 'cours/components/lesson_blocks_render.html' with lesson_blocks=lesson_blocks %}
+   456→                    {% elif code_exercises %}
+   457→                    {# Legacy: code exercises without blocks #}
+   458→                    <div class="contenu-article prose dark:prose-invert max-w-none
+   459→                                text-gray-700 dark:text-gray-200 leading-relaxed mb-8">
+   460→                        {% for ex in code_exercises %}
+   461→                            {% include 'cours/components/code_sandbox.html' with exercise=ex %}
+   462→                        {% endfor %}
+   463→                    </div>
+   464→                    {% else %}
+   465→                    {# No content yet #}
+   466→                    <div class="contenu-article prose dark:prose-invert max-w-none
+   467→                                text-gray-700 dark:text-gray-200 leading-relaxed mb-8">
+   468→                        <p class="text-gray-400 italic">{% trans "Le contenu de cette leçon sera bientôt disponible." %}</p>
+   469→                    </div>
+   470→                    {% endif %}
+   471→                    {% else %}
+   472→                    <!-- Aperçu pour non-inscrits -->
+   473→                    <div class="bg-gray-50 dark:bg-gray-700 rounded-2xl p-8 text-center mb-8">
+   474→                        <div class="text-4xl mb-3">🔒</div>
+   475→                        <h3 class="font-bold text-gray-700 dark:text-gray-200 mb-2">
+   476→                            {% trans "Contenu réservé aux inscrits" %}
+   477→                        </h3>
+   478→                        <p class="text-gray-400 dark:text-gray-500 text-sm mb-4">
+   479→                            {% trans "Inscris-toi gratuitement pour accéder à tout le contenu." %}
+   480→                        </p>
+   481→                        <form method="POST" action="{% url 'cours:inscrire' cours.id %}">
+   482→                            {% csrf_token %}
+   483→                            <button type="submit"
+   484→                                class="bg-numeria-or text-numeria-bleu font-bold px-8 py-3 rounded-xl hover:bg-yellow-400 transition-colors">
+   485→                                {% if cours.is_free %}🚀 {% trans "Commencer gratuitement" %}{% else %}💳 {% trans "S'inscrire" %}{% endif %}
+   486→                            </button>
+   487→                        </form>
+   488→                    </div>
+   489→                    {% endif %}
+   490→
+   491→                    <!-- ===== EXERCICES DE LA LEÇON ===== -->
+   492→                    {% if exercices and est_inscrit and not lesson_blocks %}
+   493→                    <div class="border-t border-gray-200 dark:border-gray-700 pt-8 mb-8">
+   494→
+   495→                        <h2 class="text-xl font-bold text-numeria-bleu dark:text-numeria-or mb-6 flex items-center gap-2">
+   496→                            <span>🧪</span> Exercices
+   497→                            <span class="text-sm font-normal text-gray-400 dark:text-gray-500">
+   498→                                ({{ exercices_reussis_ids|length }}/{{ exercices|length }} réussis)
+   499→                            </span>
+   500→                        </h2>
+   501→
+   502→                        <div class="flex flex-col gap-6">
+   503→                            {% for exercice in exercices %}
+   504→
+   505→                            <div class="bg-gray-50 dark:bg-gray-700 rounded-2xl border
+   506→                                {% if exercice.id in exercices_reussis_ids %}
+   507→                                    border-green-300 dark:border-green-700
+   508→                                {% elif exercice_actif_id == exercice.id and resultat_exercice == 'incorrect' %}
+   509→                                    border-red-300 dark:border-red-700
+   510→                                {% else %}
+   511→                                    border-gray-200 dark:border-gray-600
+   512→                                {% endif %}
+   513→                                overflow-hidden">
+   514→
+   515→                                <!-- En-tête exercice -->
+   516→                                <div class="flex items-center justify-between p-4
+   517→                                    {% if exercice.id in exercices_reussis_ids %}
+   518→                                        bg-green-50 dark:bg-green-900
+   519→                                    {% elif exercice_actif_id == exercice.id and resultat_exercice == 'incorrect' %}
+   520→                                        bg-red-50 dark:bg-red-900
+   521→                                    {% else %}
+   522→                                        bg-white dark:bg-gray-800
+   523→                                    {% endif %}">
+   524→                                    <div class="flex items-center gap-3">
+   525→                                        <div class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm
+   526→                                            {% if exercice.id in exercices_reussis_ids %}
+   527→                                                bg-green-500 text-white
+   528→                                            {% elif exercice_actif_id == exercice.id and resultat_exercice == 'incorrect' %}
+   529→                                                bg-red-500 text-white
+   530→                                            {% else %}
+   531→                                                bg-numeria-bleu text-numeria-or
+   532→                                            {% endif %}">
+   533→                                            {% if exercice.id in exercices_reussis_ids %}✓
+   534→                                            {% elif exercice_actif_id == exercice.id and resultat_exercice == 'incorrect' %}✗
+   535→                                            {% else %}{{ exercice.order }}{% endif %}
+   536→                                        </div>
+   537→                                        <span class="font-bold text-sm text-gray-700 dark:text-gray-200">
+   538→                                            Exercice {{ exercice.order }}
+   539→                                        </span>
+   540→                                    </div>
+   541→                                    <div class="flex items-center gap-2">
+   542→                                        <span class="text-xs text-gray-400 dark:text-gray-500">
+   543→                                            {{ exercice.points }} point{{ exercice.points|pluralize }}
+   544→                                        </span>
+   545→                                        {% if exercice.id in exercices_reussis_ids %}
+   546→                                        <span class="bg-green-100 dark:bg-green-800 text-green-600 dark:text-green-300 text-xs font-bold px-2 py-0.5 rounded-full">
+   547→                                            ✅ Réussi
+   548→                                        </span>
+   549→                                        {% endif %}
+   550→                                    </div>
+   551→                                </div>
+   552→
+   553→                                <!-- Corps de l'exercice -->
+   554→                                <div class="p-5">
+   555→
+   556→                                    <!-- Question -->
+   557→                                    <div class="mb-5">
+   558→                                        <p class="font-semibold text-gray-800 dark:text-gray-100 leading-relaxed">
+   559→                                            {{ exercice.question|safe }}
+   560→                                        </p>
+   561→                                    </div>
+   562→
+   563→                                    <!-- Résultat de la soumission pour CET exercice -->
+   564→                                    {% if exercice_actif_id == exercice.id %}
+   565→                                        {% if resultat_exercice == 'correct' %}
+   566→                                        <div class="bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700 rounded-xl p-4 mb-4">
+   567→                                            <p class="text-green-700 dark:text-green-300 font-bold flex items-center gap-2">
+   568→                                                <span>🎉</span> Excellente réponse ! Tu as bien répondu.
+   569→                                            </p>
+   570→                                        </div>
+   571→                                        {% elif resultat_exercice == 'incorrect' %}
+   572→                                        <div class="bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 rounded-xl p-4 mb-4">
+   573→                                            <p class="text-red-700 dark:text-red-300 font-bold flex items-center gap-2">
+   574→                                                <span>❌</span>
+   575→                                                Ce n'est pas la bonne réponse. Tu as choisi
+   576→                                                <span class="underline">{{ reponse_choisie }}</span>.
+   577→                                                Réessaie !
+   578→                                            </p>
+   579→                                        </div>
+   580→                                        {% endif %}
+   581→                                    {% endif %}
+   582→
+   583→                                    <!-- Formulaire de réponse (si pas encore réussi) -->
+   584→                                    {% if exercice.id not in exercices_reussis_ids %}
+   585→                                    <form method="POST" action="{% url 'cours:soumettre_exercice' exercice.id %}">
+   586→                                        {% csrf_token %}
+   587→
+   588→                                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+   589→
+   590→                                            <!-- Choix A -->
+   591→                                            <label class="flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all
+   592→                                                {% if exercice_actif_id == exercice.id and reponse_choisie == 'A' and resultat_exercice == 'incorrect' %}
+   593→                                                    border-red-400 bg-red-50 dark:bg-red-900
+   594→                                                {% else %}
+   595→                                                    border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 hover:border-numeria-or hover:bg-yellow-50 dark:hover:bg-gray-700
+   596→                                                {% endif %}">
+   597→                                                <input type="radio" name="reponse" value="A" class="mt-0.5 accent-numeria-or" required>
+   598→                                                <span class="font-bold text-numeria-bleu dark:text-numeria-or mr-1">A.</span>
+   599→                                                <span class="text-gray-700 dark:text-gray-200 text-sm">{{ exercice.choix_a }}</span>
+   600→                                            </label>
+   601→
+   602→                                            <!-- Choix B -->
+   603→                                            <label class="flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all
+   604→                                                {% if exercice_actif_id == exercice.id and reponse_choisie == 'B' and resultat_exercice == 'incorrect' %}
+   605→                                                    border-red-400 bg-red-50 dark:bg-red-900
+   606→                                                {% else %}
+   607→                                                    border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 hover:border-numeria-or hover:bg-yellow-50 dark:hover:bg-gray-700
+   608→                                                {% endif %}">
+   609→                                                <input type="radio" name="reponse" value="B" class="mt-0.5 accent-numeria-or" required>
+   610→                                                <span class="font-bold text-numeria-bleu dark:text-numeria-or mr-1">B.</span>
+   611→                                                <span class="text-gray-700 dark:text-gray-200 text-sm">{{ exercice.choix_b }}</span>
+   612→                                            </label>
+   613→
+   614→                                            <!-- Choix C -->
+   615→                                            <label class="flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all
+   616→                                                {% if exercice_actif_id == exercice.id and reponse_choisie == 'C' and resultat_exercice == 'incorrect' %}
+   617→                                                    border-red-400 bg-red-50 dark:bg-red-900
+   618→                                                {% else %}
+   619→                                                    border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 hover:border-numeria-or hover:bg-yellow-50 dark:hover:bg-gray-700
+   620→                                                {% endif %}">
+   621→                                                <input type="radio" name="reponse" value="C" class="mt-0.5 accent-numeria-or" required>
+   622→                                                <span class="font-bold text-numeria-bleu dark:text-numeria-or mr-1">C.</span>
+   623→                                                <span class="text-gray-700 dark:text-gray-200 text-sm">{{ exercice.choix_c }}</span>
+   624→                                            </label>
+   625→
+   626→                                            <!-- Choix D -->
+   627→                                            <label class="flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all
+   628→                                                {% if exercice_actif_id == exercice.id and reponse_choisie == 'D' and resultat_exercice == 'incorrect' %}
+   629→                                                    border-red-400 bg-red-50 dark:bg-red-900
+   630→                                                {% else %}
+   631→                                                    border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 hover:border-numeria-or hover:bg-yellow-50 dark:hover:bg-gray-700
+   632→                                                {% endif %}">
+   633→                                                <input type="radio" name="reponse" value="D" class="mt-0.5 accent-numeria-or" required>
+   634→                                                <span class="font-bold text-numeria-bleu dark:text-numeria-or mr-1">D.</span>
+   635→                                                <span class="text-gray-700 dark:text-gray-200 text-sm">{{ exercice.choix_d }}</span>
+   636→                                            </label>
+   637→
+   638→                                        </div>
+   639→
+   640→                                        <button type="submit"
+   641→                                            class="bg-numeria-bleu text-white font-bold px-6 py-2.5 rounded-xl hover:bg-numeria-bleu-fonce transition-colors text-sm">
+   642→                                            Soumettre ma réponse →
+   643→                                        </button>
+   644→
+   645→                                    </form>
+   646→
+   647→                                    {% else %}
+   648→                                    <!-- Exercice réussi — afficher le corrigé -->
+   649→                                    <div class="border-t border-green-200 dark:border-green-700 pt-4 mt-2">
+   650→
+   651→                                        <!-- Bonne réponse -->
+   652→                                        <div class="flex items-center gap-2 mb-4">
+   653→                                            <span class="bg-green-500 text-white text-xs font-bold px-3 py-1 rounded-full">
+   654→                                                Bonne réponse : {{ exercice.bonne_reponse }}
+   655→                                            </span>
+   656→                                            <span class="text-green-600 dark:text-green-400 text-sm font-semibold">
+   657→                                                {{ exercice.get_bonne_reponse_texte }}
+   658→                                            </span>
+   659→                                        </div>
+   660→
+   661→                                        <!-- Corrigé détaillé -->
+   662→                                        <div class="bg-white dark:bg-gray-800 rounded-xl p-5 border border-green-200 dark:border-green-700">
+   663→                                            <p class="text-xs font-bold text-green-600 dark:text-green-400 uppercase tracking-wide mb-3 flex items-center gap-1">
+   664→                                                <span>📖</span> Corrigé détaillé
+   665→                                            </p>
+   666→                                            <div class="text-gray-700 dark:text-gray-200 text-sm leading-relaxed contenu-article">
+   667→                                                {{ exercice.corrige|safe }}
+   668→                                            </div>
+   669→                                        </div>
+   670→
+   671→                                    </div>
+   672→                                    {% endif %}
+   673→
+   674→                                </div>
+   675→                            </div>
+   676→
+   677→                            {% endfor %}
+   678→                        </div>
+   679→                    </div>
+   680→                    {% endif %}
+   681→
+   682→                    <!-- ===== EXERCICES DE CODE (Pyodide) ===== -->
+   683→                    {% if code_exercises and est_inscrit and not lesson_blocks %}
+   684→                    <div class="border-t border-gray-200 dark:border-gray-700 pt-8 mb-8">
+   685→                        <h2 class="text-xl font-bold text-numeria-bleu dark:text-numeria-or mb-2 flex items-center gap-2">
+   686→                            <span>💻</span> {% trans "Exercices de code" %}
+   687→                            <span class="text-sm font-normal text-gray-400 dark:text-gray-500">
+   688→                                ({% for ex in code_exercises %}{% if ex.is_solved %}{% with solved_count=forloop.counter %}{% endwith %}{% endif %}{% endfor %}Python — Pyodide)
+   689→                            </span>
+   690→                        </h2>
+   691→                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
+   692→                            {% trans "Le code s'exécute directement dans ton navigateur — aucune installation requise." %}
+   693→                        </p>
+   694→                        {% for exercise in code_exercises %}
+   695→                            {% include 'cours/components/code_sandbox.html' with exercise=exercise %}
+   696→                        {% endfor %}
+   697→                    </div>
+   698→                    {% endif %}
+   699→
+   700→                    <!-- NAVIGATION ET ACTIONS -->
+   701→                    {% if est_inscrit %}
+   702→                    <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+   703→
+   704→                        <!-- Bouton terminer la leçon -->
+   705→                        <div class="flex flex-col sm:flex-row items-center gap-4 mb-6">
+   706→
+   707→                            {% if lecon_active.id in lecons_terminees_ids %}
+   708→                            <!-- Leçon déjà terminée -->
+   709→                            <div class="flex items-center gap-3">
+   710→                                <div class="bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-300 font-bold px-5 py-2.5 rounded-xl text-sm">
+   711→                                    ✅ Leçon terminée
+   712→                                </div>
+   713→                                <form method="POST" action="{% url 'cours:annuler_lecon' lecon_active.id %}">
+   714→                                    {% csrf_token %}
+   715→                                    <button type="submit"
+   716→                                        class="text-xs text-gray-400 hover:text-red-500 transition-colors">
+   717→                                        {% trans "Annuler" %}
+   718→                                    </button>
+   719→                                </form>
+   720→                            </div>
+   721→                            {% else %}
+   722→                            <!-- Marquer comme terminée -->
+   723→                            <form method="POST" action="{% url 'cours:terminer_lecon' lecon_active.id %}">
+   724→                                {% csrf_token %}
+   725→                                <button type="submit"
+   726→                                    class="bg-numeria-or text-numeria-bleu font-bold px-6 py-2.5 rounded-xl hover:bg-yellow-400 transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5 transform text-sm">
+   727→                                    ✅ Marquer comme terminée
+   728→                                </button>
+   729→                            </form>
+   730→                            {% endif %}
+   731→
+   732→                        </div>
+   733→
+   734→                        <!-- Navigation précédent / suivant -->
+   735→                        <div class="flex items-center justify-between">
+   736→                            {% if lecon_precedente %}
+   737→                            <a href="?lecon={{ lecon_precedente.id }}"
+   738→                               class="flex items-center gap-2 text-gray-500 dark:text-gray-400 hover:text-numeria-bleu dark:hover:text-numeria-or transition-colors">
+   739→                                <span>←</span>
+   740→                                <div class="text-left">
+   741→                                    <p class="text-xs text-gray-400">Précédente</p>
+   742→                                    <p class="text-sm font-semibold truncate max-w-32">{{ lecon_precedente.title }}</p>
+   743→                                </div>
+   744→                            </a>
+   745→                            {% else %}
+   746→                            <div></div>
+   747→                            {% endif %}
+   748→
+   749→                            {% if lecon_suivante %}
+   750→                            <a href="?lecon={{ lecon_suivante.id }}"
+   751→                               class="flex items-center gap-2 text-gray-500 dark:text-gray-400 hover:text-numeria-bleu dark:hover:text-numeria-or transition-colors">
+   752→                                <div class="text-right">
+   753→                                    <p class="text-xs text-gray-400">Suivante</p>
+   754→                                    <p class="text-sm font-semibold truncate max-w-32">{{ lecon_suivante.title }}</p>
+   755→                                </div>
+   756→                                <span>→</span>
+   757→                            </a>
+   758→                            {% else %}
+   759→                            <!-- Cours terminé -->
+   760→                            {% if inscription.est_termine %}
+   761→                            <div class="text-right">
+   762→                                <p class="text-green-500 font-bold text-sm">🎉 Cours terminé !</p>
+   763→                                <a href="{% url 'comptes:tableau_de_bord' %}"
+   764→                                   class="text-xs text-numeria-bleu dark:text-numeria-or hover:opacity-75">
+   765→                                    Voir mon certificat →
+   766→                                </a>
+   767→                            </div>
+   768→                            {% endif %}
+   769→                            {% endif %}
+   770→                        </div>
+   771→
+   772→                    </div>
+   773→                    {% endif %}
+   774→                    
+   775→                    <!-- ===== ÉVALUATION DU COURS ===== -->
+   776→                    {% if est_inscrit and inscription.est_termine %}
+   777→                    <div class="max-w-4xl mx-auto px-4 sm:px-8 py-12 border-t border-gray-200 dark:border-gray-700">
+   778→                        <h2 class="text-2xl sm:text-3xl font-bold text-numeria-bleu dark:text-numeria-or mb-6 flex items-center gap-3">
+   779→                            <span>⭐</span> Évaluer ce cours
+   780→                        </h2>
+   781→                        
+   782→                        <!-- Évaluation existante -->
+   783→                        {% if evaluation_utilisateur %}
+   784→                        <div class="bg-green-50 dark:bg-green-900 p-6 rounded-2xl border border-green-200 dark:border-green-700">
+   785→                            <p class="text-green-600 dark:text-green-400 font-bold mb-3">
+   786→                                Votre évaluation
+   787→                            </p>
+   788→                            <div class="text-2xl mb-3">
+   789→                                {% for i in "12345" %}
+   790→                                    {% if i|add:0 <= evaluation_utilisateur.note %}<span class="text-yellow-400">★</span>{% else %}<span class="text-gray-300">★</span>{% endif %}
+   791→                                {% endfor %}
+   792→                            </div>
+   793→                            {% if evaluation_utilisateur.commentaire %}
+   794→                            <p class="text-gray-700 dark:text-gray-200 italic">
+   795→                                "{{ evaluation_utilisateur.commentaire }}"
+   796→                            </p>
+   797→                            {% endif %}
+   798→                        </div>
+   799→                        {% else %}
+   800→                        <!-- Formulaire d'évaluation -->
+   801→                        <form method="POST" action="{% url 'cours:evaluer' cours.id %}" class="max-w-2xl">
+   802→                            {% csrf_token %}
+   803→                            <div class="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-200 dark:border-gray-700">
+   804→                                <p class="text-gray-700 dark:text-gray-300 font-semibold mb-4">
+   805→                                    Qu'avez-vous pensé de ce cours ?
+   806→                                </p>
+   807→                                
+   808→                                <!-- Sélection des stars -->
+   809→                                <div class="flex gap-2 mb-6" id="rating-stars">
+   810→                                    {% for i in "12345" %}
+   811→                                    <label class="cursor-pointer text-4xl transition-transform hover:scale-110" data-rating="{{ i }}">
+   812→                                        <input type="radio" name="note" value="{{ i }}" class="hidden" id="star-{{ i }}">
+   813→                                        <span class="text-gray-300">★</span>
+   814→                                    </label>
+   815→                                    {% endfor %}
+   816→                                </div>
+   817→
+   818→                                <script>
+   819→                                document.addEventListener('DOMContentLoaded', function() {
+   820→                                    const ratingStars = document.getElementById('rating-stars');
+   821→                                    if (ratingStars) {
+   822→                                        const labels = ratingStars.querySelectorAll('label');
+   823→                                        const spans = ratingStars.querySelectorAll('span');
+   824→
+   825→                                        labels.forEach((label, index) => {
+   826→                                            label.addEventListener('click', function() {
+   827→                                                const rating = parseInt(this.dataset.rating);
+   828→
+   829→                                                // Mettre à jour l'apparence des étoiles
+   830→                                                spans.forEach((span, spanIndex) => {
+   831→                                                    if (spanIndex < rating) {
+   832→                                                        span.classList.remove('text-gray-300');
+   833→                                                        span.classList.add('text-yellow-400');
+   834→                                                    } else {
+   835→                                                        span.classList.remove('text-yellow-400');
+   836→                                                        span.classList.add('text-gray-300');
+   837→                                                    }
+   838→                                                });
+   839→
+   840→                                                // Cocher le bon input radio
+   841→                                                const radio = document.getElementById(`star-${rating}`);
+   842→                                                if (radio) {
+   843→                                                    radio.checked = true;
+   844→                                                }
+   845→                                            });
+   846→
+   847→                                            // Effet hover pour prévisualiser
+   848→                                            label.addEventListener('mouseenter', function() {
+   849→                                                const rating = parseInt(this.dataset.rating);
+   850→                                                spans.forEach((span, spanIndex) => {
+   851→                                                    if (spanIndex < rating) {
+   852→                                                        span.classList.remove('text-gray-300');
+   853→                                                        span.classList.add('text-yellow-400');
+   854→                                                    } else {
+   855→                                                        span.classList.remove('text-yellow-400');
+   856→                                                        span.classList.add('text-gray-300');
+   857→                                                    }
+   858→                                                });
+   859→                                            });
+   860→
+   861→                                            // Réinitialiser au mouseleave si aucune étoile n'est sélectionnée
+   862→                                            label.addEventListener('mouseleave', function() {
+   863→                                                const checkedRadio = ratingStars.querySelector('input[type="radio"]:checked');
+   864→                                                if (!checkedRadio) {
+   865→                                                    spans.forEach(span => {
+   866→                                                        span.classList.remove('text-yellow-400');
+   867→                                                        span.classList.add('text-gray-300');
+   868→                                                    });
+   869→                                                }
+   870→                                            });
+   871→                                        });
+   872→                                    }
+   873→                                });
+   874→                                </script>
+   875→                                
+   876→                                <!-- Commentaire -->
+   877→                                <textarea name="commentaire" placeholder="Partagez votre avis..." 
+   878→                                          class="w-full p-4 rounded-xl border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm mb-4 resize-none" 
+   879→                                          rows="4" maxlength="500"></textarea>
+   880→                                
+   881→                                <button type="submit"
+   882→                                    class="bg-numeria-or text-numeria-bleu font-bold px-6 py-3 rounded-xl hover:bg-yellow-400 transition-colors">
+   883→                                    Soumettre mon évaluation
+   884→                                </button>
+   885→                            </div>
+   886→                        </form>
+   887→                        {% endif %}
+   888→                    </div>
+   889→                    {% endif %}
+   890→                    
+   891→                    <!-- ===== QUESTIONS FRÉQUENTES ===== -->
+   892→                    <div class="max-w-4xl mx-auto px-4 sm:px-8 py-12 border-t border-gray-200 dark:border-gray-700">
+   893→                        <h2 class="text-2xl sm:text-3xl font-bold text-numeria-bleu dark:text-numeria-or mb-6 flex items-center gap-3">
+   894→                            <span>❓</span> Questions fréquentes
+   895→                        </h2>
+   896→                        
+   897→                        {% if cours.faq.all %}
+   898→                        <div class="space-y-3">
+   899→                            {% for question in cours.faq.all %}
+   900→                            {% if question.approuvee_par_admin or question.auteur == user %}
+   901→                            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+   902→                                <div class="p-5 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" onclick="this.parentElement.classList.toggle('active')">
+   903→                                    <div class="flex items-start justify-between gap-3">
+   904→                                        <div class="flex-1">
+   905→                                            <p class="font-semibold text-gray-800 dark:text-gray-100">
+   906→                                                {{ question.question }}
+   907→                                            </p>
+   908→                                            <p class="text-xs text-gray-400 mt-1">
+   909→                                                Par {% if question.auteur.first_name %}{{ question.auteur.first_name }}{% else %}{{ question.auteur.username }}{% endif %}
+   910→                                                · {{ question.votes_positifs }} 👍
+   911→                                            </p>
+   912→                                        </div>
+   913→                                        <span class="text-gray-400 flex-shrink-0">▼</span>
+   914→                                    </div>
+   915→                                </div>
+   916→                                <div class="hidden px-5 py-4 bg-gray-50 dark:bg-gray-700 border-t border-gray-200 dark:border-gray-600">
+   917→                                    <div class="prose dark:prose-invert max-w-none text-sm">
+   918→                                        {{ question.reponse|safe }}
+   919→                                    </div>
+   920→                                </div>
+   921→                            </div>
+   922→                            {% endif %}
+   923→                            {% endfor %}
+   924→                        </div>
+   925→                        {% endif %}
+   926→                        
+   927→                        <!-- Formulaire pour poser une question -->
+   928→                        {% if est_inscrit %}
+   929→                        <div class="mt-8 bg-blue-50 dark:bg-blue-900 p-6 rounded-2xl border border-blue-200 dark:border-blue-700">
+   930→                            <p class="font-semibold text-gray-800 dark:text-gray-100 mb-4">
+   931→                                Vous avez une question ?
+   932→                            </p>
+   933→                            <form method="POST" action="{% url 'cours:poser_question' cours.id %}" class="space-y-4">
+   934→                                {% csrf_token %}
+   935→                                <input type="text" name="question" placeholder="Votre question..." required
+   936→                                       class="w-full p-3 rounded-lg border border-blue-300 dark:border-blue-600 dark:bg-gray-800 dark:text-white text-sm" maxlength="300">
+   937→                                <button type="submit"
+   938→                                    class="bg-numeria-bleu text-white font-bold px-6 py-2.5 rounded-xl hover:bg-numeria-bleu-fonce transition-colors text-sm">
+   939→                                    Poser la question
+   940→                                </button>
+   941→                            </form>
+   942→                        </div>
+   943→                        {% endif %}
+   944→                    </div>
+   945→
+   946→                </div>
+   947→
+   948→            {% else %}
+   949→
+   950→                <!-- PAS DE LEÇON — Page d'introduction du cours -->
+   951→                <div class="max-w-4xl mx-auto px-4 sm:px-8 py-8">
+   952→
+   953→                    {% if cours.video_url %}
+   954→                    <div class="mb-8 rounded-2xl overflow-hidden shadow-lg">
+   955→                        {% lecteur_video cours.video_url titre=cours.title %}
+   956→                    </div>
+   957→                    {% endif %}
+   958→
+   959→                    <h1 class="text-3xl font-bold text-numeria-bleu dark:text-numeria-or mb-4">
+   960→                        {{ cours.title }}
+   961→                    </h1>
+   962→
+   963→                    <div class="flex flex-wrap gap-3 mb-6">
+   964→                        <span class="bg-numeria-or text-numeria-bleu text-xs font-bold px-3 py-1 rounded-full">
+   965→                            {{ cours.get_category_display }}
+   966→                        </span>
+   967→                        <span class="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs font-semibold px-3 py-1 rounded-full">
+   968→                            {{ cours.get_level_display }}
+   969→                        </span>
+   970→                        {% if cours.is_free %}
+   971→                        <span class="bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-300 text-xs font-bold px-3 py-1 rounded-full">
+   972→                            Gratuit
+   973→                        </span>
+   974→                        {% endif %}
+   975→                        {% if cours.category == "scolaire" and cours.level %}
+   976→                        <span class="bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 text-xs font-bold px-3 py-1 rounded-full">
+   977→                            {{ cours.get_level_display }}
+   978→                        </span>
+   979→                        {% endif %}
+   980→                    </div>
+   981→
+   982→                    <div class="text-gray-600 dark:text-gray-300 leading-relaxed text-lg mb-8">
+   983→                        {{ cours.description|render_content }}
+   984→                    </div>
+   985→
+   986→                    <!-- Bouton inscription -->
+   987→                    {% if not est_inscrit %}
+   988→                    <form method="POST" action="{% url 'cours:inscrire' cours.id %}">
+   989→                        {% csrf_token %}
+   990→                        <button type="submit"
+   991→                            class="bg-numeria-or text-numeria-bleu font-bold px-10 py-4 rounded-xl hover:bg-yellow-400 transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 transform text-lg">
+   992→                            {% if cours.is_free %}🚀 {% trans "Commencer gratuitement" %}{% else %}💳 {% trans "S'inscrire" %} — {{ cours.price }} FCFA{% endif %}
+   993→                        </button>
+   994→                    </form>
+   995→                    {% else %}
+   996→                    {% if lecons %}
+   997→                    <a href="?lecon={{ lecons.first.id }}"
+   998→                       class="inline-block bg-numeria-or text-numeria-bleu font-bold px-10 py-4 rounded-xl hover:bg-yellow-400 transition-colors text-lg">
+   999→                        Continuer le cours →
+  1000→                    </a>
+  1001→                    {% endif %}
+  1002→                    {% endif %}
+  1003→
+  1004→                </div>
+  1005→
+  1006→            {% endif %}
+  1007→        </div>
+  1008→    </div>
+  1009→</div>
+  1010→
+  1011→{% if est_inscrit and code_exercises or est_inscrit and lesson_blocks %}
+  1012→<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+  1013→<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
+  1014→<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+  1015→<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+  1016→<script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
+  1017→<script>
+  1018→window._numeriaPyodideReady = (async function() {
+  1019→  var pyodide = await loadPyodide();
+  1020→  try { await pyodide.loadPackage(['numpy', 'matplotlib']); } catch(_) {}
+  1021→  document.querySelectorAll('[id$="-run-btn"][id^="sandbox-"]').forEach(function(btn) {
+  1022→    if (!btn.disabled || btn.textContent.includes('Exécuter')) btn.disabled = false;
+  1023→  });
+  1024→  document.querySelectorAll('[id$="-pyodide-status"][id^="sandbox-"]').forEach(function(el) {
+  1025→    el.style.display = 'none';
+  1026→  });
+  1027→  return pyodide;
+  1028→})();
+  1029→</script>
+  1030→{% endif %}
+  1031→{% endblock %}
