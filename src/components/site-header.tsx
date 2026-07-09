@@ -3,6 +3,17 @@ import { auth, signOut } from "@/lib/auth";
 import { NumeriaLogoFull } from "@/components/numeria-logo";
 import { Button } from "@/components/ui/button";
 
+const NAV_ITEMS = [
+  { href: "/cours", label: "Courses" },
+  { href: "/formations", label: "Training Programmes" },
+  { href: "/blog", label: "Blog" },
+  { href: "/admissions", label: "Applications" },
+  { href: "/communaute", label: "Community" },
+  { href: "/mentorat", label: "Mentorship" },
+  { href: "/a-propos", label: "About" },
+  { href: "/contact", label: "Contact" },
+];
+
 export async function SiteHeader() {
   const session = await auth();
 
@@ -13,23 +24,20 @@ export async function SiteHeader() {
           <NumeriaLogoFull size={36} variant="dark" />
         </Link>
 
-        <nav className="hidden items-center gap-1 md:flex">
-          {[
-            { href: "/cours", label: "Cours" },
-            { href: "/#features", label: "Fonctionnalités" },
-            { href: "/#about", label: "À propos" },
-            { href: "/#contact", label: "Contact" },
-          ].map((item) => (
+        {/* Desktop nav */}
+        <nav className="hidden items-center gap-0.5 lg:flex">
+          {NAV_ITEMS.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className="rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+              className="rounded-lg px-2.5 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
             >
               {item.label}
             </Link>
           ))}
         </nav>
 
+        {/* Auth buttons */}
         <div className="flex items-center gap-2">
           {session?.user ? (
             <>
@@ -37,7 +45,7 @@ export async function SiteHeader() {
                 href="/dashboard"
                 className="hidden rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:block"
               >
-                Tableau de bord
+                Dashboard
               </Link>
               <form
                 action={async () => {
@@ -51,7 +59,7 @@ export async function SiteHeader() {
                   size="sm"
                   className="text-sm"
                 >
-                  Déconnexion
+                  Log out
                 </Button>
               </form>
             </>
@@ -61,18 +69,31 @@ export async function SiteHeader() {
                 href="/login"
                 className="hidden rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:block"
               >
-                Connexion
+                Log in
               </Link>
               <Link
                 href="/signup"
                 className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
               >
-                S&apos;inscrire
+                Sign up for free
               </Link>
             </>
           )}
         </div>
       </div>
+
+      {/* Mobile nav — scrollable */}
+      <nav className="flex items-center gap-1 overflow-x-auto border-t border-border/40 px-4 py-1.5 lg:hidden">
+        {NAV_ITEMS.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className="whitespace-nowrap rounded-lg px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+          >
+            {item.label}
+          </Link>
+        ))}
+      </nav>
     </header>
   );
 }

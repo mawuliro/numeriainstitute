@@ -1,20 +1,23 @@
 import {
-  Atom,
-  Calculator,
-  Code2,
-  FlaskConical,
   GraduationCap,
-  LineChart,
+  Globe,
+  Smartphone,
+  Trophy,
+  FlaskConical,
+  Wallet,
+  Star,
+  ArrowRight,
+  Code2,
+  FileText,
+  Atom,
   type LucideIcon,
-  MessagesSquare,
-  Sparkles,
-  Users,
 } from "lucide-react";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { NumeriaLogo } from "@/components/numeria-logo";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
 
 export default function Home() {
   return (
@@ -23,9 +26,9 @@ export default function Home() {
       <main className="flex-1">
         <Hero />
         <StatsBar />
-        <FeaturedCourses />
-        <Features />
-        <CategoriesPreview />
+        <WhyChooseUs />
+        <Testimonials />
+        <PopularCourses />
         <CtaBanner />
       </main>
       <SiteFooter />
@@ -34,97 +37,95 @@ export default function Home() {
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
-/* Hero                                                                       */
+/* Hero — floating math symbols, same as Django site                         */
 /* ────────────────────────────────────────────────────────────────────────── */
+
+const MATH_SYMBOLS = [
+  "∫", "e^{iπ} + 1 = 0", "∑", "π ≈ 3.14159",
+  "a² + b² = c²", "∇·E = ρ/ε₀", "√", "f(x) = ax + b",
+  "lim n→∞", "θ", "P(A|B) = P(B|A)P(A)/P(B)", "α + β",
+  "{ x ∈ ℝ : x > 0 }",
+];
 
 function Hero() {
   return (
-    <section className="relative overflow-hidden">
-      {/* Background gradient */}
-      <div
-        aria-hidden
-        className="absolute inset-0 -z-10 bg-gradient-to-br from-[#1B2A4E] via-[#1B2A4E] to-[#0d1530]"
-      />
-      {/* Decorative teal glow */}
-      <div
-        aria-hidden
-        className="absolute -right-32 top-10 -z-10 h-96 w-96 rounded-full bg-[#2DD4BF]/20 blur-3xl"
-      />
-      <div
-        aria-hidden
-        className="absolute -left-32 bottom-0 -z-10 h-96 w-96 rounded-full bg-[#C9A227]/10 blur-3xl"
-      />
+    <section className="relative overflow-hidden bg-gradient-to-br from-[#1B2A4E] via-[#1B2A4E] to-[#0d1530]">
+      {/* Floating math symbols */}
+      {MATH_SYMBOLS.map((sym, i) => (
+        <span
+          key={i}
+          aria-hidden
+          className="absolute select-none font-mono text-white/5"
+          style={{
+            top: `${10 + (i * 7) % 80}%`,
+            left: `${5 + (i * 13) % 90}%`,
+            fontSize: `${1.5 + (i % 3) * 0.8}rem`,
+            animation: `float ${8 + i}s ease-in-out infinite`,
+            animationDelay: `${i * 0.5}s`,
+          }}
+        >
+          {sym}
+        </span>
+      ))}
 
-      <div className="container mx-auto max-w-7xl px-4 py-20 md:py-32">
-        <div className="grid items-center gap-12 lg:grid-cols-2">
-          {/* Left: copy */}
-          <div className="space-y-6 text-white">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-1.5 text-xs font-medium backdrop-blur-sm">
-              <Sparkles className="h-3.5 w-3.5 text-[#2DD4BF]" />
-              <span>Nouveau · Cours de Mécanique Quantique I disponible</span>
-            </div>
+      <style>{`
+        @keyframes float {
+          0%, 100% { transform: translateY(0) rotate(0deg); }
+          50% { transform: translateY(-20px) rotate(5deg); }
+        }
+      `}</style>
 
-            <h1 className="text-4xl font-bold leading-tight tracking-tight md:text-6xl">
-              Apprends les <span className="text-[#2DD4BF]">sciences</span> par
-              la <span className="text-[#C9A227]">pratique</span>
-            </h1>
+      <div className="relative container mx-auto max-w-7xl px-4 py-20 md:py-32">
+        <div className="mx-auto max-w-3xl text-center text-white">
+          <Badge className="mb-6 bg-[#2DD4BF]/20 text-[#2DD4BF] border-[#2DD4BF]/30">
+            SCIENTIFIC COMPUTING & AI
+          </Badge>
 
-            <p className="max-w-xl text-lg text-white/80">
-              Une plateforme d&apos;apprentissage interactive pour la physique,
-              les mathématiques et la programmation. Cours structurés,
-              laboratoires PhET-style, exercices corrigés, et mentorat
-              personnalisé — pensée pour les apprenants francophones.
-            </p>
+          <h1 className="text-4xl font-bold leading-tight tracking-tight md:text-6xl">
+            Science accessible to all curious minds
+          </h1>
 
-            <div className="flex flex-wrap items-center gap-4">
-              <a
-                href="#courses"
-                className="inline-flex items-center justify-center rounded-xl bg-[#2DD4BF] px-6 py-3 text-sm font-semibold text-[#1B2A4E] shadow-lg shadow-[#2DD4BF]/25 transition-transform hover:scale-105"
-              >
-                Explorer les cours
-              </a>
-              <a
-                href="#features"
-                className="inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/5 px-6 py-3 text-sm font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white/10"
-              >
-                Découvrir la plateforme
-              </a>
-            </div>
+          <p className="mx-auto mt-6 max-w-2xl text-lg text-white/80">
+            Quality scientific courses designed for African and French-speaking
+            learners worldwide. From high school to advanced AI.
+          </p>
 
-            <div className="flex flex-wrap items-center gap-6 pt-4 text-sm text-white/60">
-              <div className="flex items-center gap-2">
-                <Users className="h-4 w-4 text-[#2DD4BF]" />
-                <span>+1 200 apprenants</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <GraduationCap className="h-4 w-4 text-[#2DD4BF]" />
-                <span>4 cours complets</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <FlaskConical className="h-4 w-4 text-[#2DD4BF]" />
-                <span>+30 laboratoires interactifs</span>
-              </div>
-            </div>
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+            <Link
+              href="/cours"
+              className="inline-flex items-center gap-2 rounded-xl bg-[#2DD4BF] px-6 py-3 text-sm font-semibold text-[#1B2A4E] shadow-lg shadow-[#2DD4BF]/25 transition-transform hover:scale-105"
+            >
+              Discover courses
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+            <Link
+              href="/signup"
+              className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/5 px-6 py-3 text-sm font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white/10"
+            >
+              Create account
+            </Link>
           </div>
 
-          {/* Right: logo card */}
-          <div className="flex justify-center lg:justify-end">
-            <div className="relative">
-              <div
-                aria-hidden
-                className="absolute inset-0 -z-10 rounded-3xl bg-gradient-to-br from-[#2DD4BF]/30 to-[#C9A227]/20 blur-2xl"
-              />
-              <div className="flex aspect-square w-72 flex-col items-center justify-center rounded-3xl border border-white/10 bg-white/5 p-12 backdrop-blur-md md:w-96">
-                <NumeriaLogo size={180} variant="light" />
-                <div className="mt-8 text-center">
-                  <p className="text-2xl font-bold tracking-tight text-white">
-                    NUMERIA
-                  </p>
-                  <p className="text-xs uppercase tracking-[0.3em] text-white/60">
-                    Institute
-                  </p>
-                </div>
+          {/* Trust indicators */}
+          <div className="mt-12 flex flex-wrap items-center justify-center gap-8 text-sm text-white/60">
+            <div className="flex items-center gap-2">
+              <div className="flex -space-x-2">
+                {["A", "K", "F"].map((letter) => (
+                  <div
+                    key={letter}
+                    className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-[#1B2A4E] bg-[#2DD4BF] text-xs font-bold text-[#1B2A4E]"
+                  >
+                    {letter}
+                  </div>
+                ))}
               </div>
+              <span>2+ students</span>
+            </div>
+            <div className="flex items-center gap-1">
+              {[...Array(5)].map((_, i) => (
+                <Star key={i} className="h-4 w-4 fill-[#C9A227] text-[#C9A227]" />
+              ))}
+              <span className="ml-1">4.9/5</span>
             </div>
           </div>
         </div>
@@ -139,16 +140,15 @@ function Hero() {
 
 function StatsBar() {
   const stats = [
-    { value: "4", label: "Cours complets" },
-    { value: "60+", label: "Leçons interactives" },
-    { value: "30+", label: "Laboratoires PhET-style" },
-    { value: "1 200+", label: "Apprenants actifs" },
+    { value: "2+", label: "Enrolled students" },
+    { value: "5", label: "Available courses" },
+    { value: "5", label: "Countries represented" },
   ];
 
   return (
     <section className="border-y border-border bg-muted/30">
       <div className="container mx-auto max-w-7xl px-4">
-        <div className="grid grid-cols-2 divide-x divide-border md:grid-cols-4">
+        <div className="grid grid-cols-1 divide-y divide-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
           {stats.map((s) => (
             <div key={s.label} className="px-4 py-8 text-center">
               <div className="text-3xl font-bold text-primary md:text-4xl">
@@ -166,188 +166,68 @@ function StatsBar() {
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
-/* Featured courses                                                           */
-/* ────────────────────────────────────────────────────────────────────────── */
-
-type Course = {
-  icon: LucideIcon;
-  title: string;
-  description: string;
-  category: string;
-  level: string;
-  lessons: number;
-  hours: number;
-  accent: "teal" | "gold" | "bleu";
-};
-
-const COURSES: Course[] = [
-  {
-    icon: Atom,
-    title: "Mécanique Quantique I",
-    description:
-      "Du formalisme de Dirac à l'atome d'hydrogène. 8 modules, simulations de paquets d'ondes, orbitales, et effet tunnel.",
-    category: "Physique",
-    level: "Intermédiaire",
-    lessons: 18,
-    hours: 70,
-    accent: "teal",
-  },
-  {
-    icon: Calculator,
-    title: "Mécanique Classique",
-    description:
-      "De Newton à Lagrange. Cinématique, dynamique, énergie, collisions, oscillateurs, gravitation. Schémas matplotlib et trajectoires.",
-    category: "Physique",
-    level: "Débutant",
-    lessons: 22,
-    hours: 60,
-    accent: "gold",
-  },
-  {
-    icon: Code2,
-    title: "Python · Algorithmique à la POO",
-    description:
-      "Apprends Python de zéro à la programmation orientée objet. Sandbox Pyodide intégrée, exercices auto-évalués.",
-    category: "Programmation",
-    level: "Débutant",
-    lessons: 15,
-    hours: 40,
-    accent: "bleu",
-  },
-];
-
-function FeaturedCourses() {
-  return (
-    <section id="courses" className="py-20">
-      <div className="container mx-auto max-w-7xl px-4">
-        <div className="mx-auto mb-12 max-w-2xl text-center">
-          <Badge variant="secondary" className="mb-3">
-            Catalogue
-          </Badge>
-          <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
-            Des cours conçus pour la pratique
-          </h2>
-          <p className="mt-3 text-muted-foreground">
-            Chaque leçon combine théorie, simulations interactives, exercices
-            corrigés et évaluations adaptatives.
-          </p>
-        </div>
-
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {COURSES.map((course) => (
-            <CourseCard key={course.title} course={course} />
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function CourseCard({ course }: { course: Course }) {
-  const { icon: Icon, accent } = course;
-  const accentClasses = {
-    teal: "bg-[#2DD4BF]/10 text-[#2DD4BF] ring-[#2DD4BF]/20",
-    gold: "bg-[#C9A227]/10 text-[#C9A227] ring-[#C9A227]/20",
-    bleu: "bg-primary/10 text-primary ring-primary/20",
-  }[accent];
-
-  return (
-    <Card className="group flex flex-col overflow-hidden transition-all hover:shadow-lg">
-      <CardHeader>
-        <div className="flex items-start justify-between">
-          <div
-            className={`flex h-12 w-12 items-center justify-center rounded-xl ring-1 ${accentClasses}`}
-          >
-            <Icon className="h-6 w-6" />
-          </div>
-          <Badge variant="outline">{course.category}</Badge>
-        </div>
-        <CardTitle className="mt-3 text-xl">{course.title}</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-1 flex-col">
-        <p className="text-sm text-muted-foreground">{course.description}</p>
-
-        <div className="mt-4 flex flex-wrap gap-2 text-xs">
-          <Badge variant="secondary">{course.level}</Badge>
-          <Badge variant="secondary">{course.lessons} leçons</Badge>
-          <Badge variant="secondary">{course.hours} h</Badge>
-        </div>
-
-        <a
-          href="#"
-          className="mt-6 inline-flex items-center gap-1 text-sm font-semibold text-primary transition-colors group-hover:text-primary/80"
-        >
-          Voir le cours
-          <span aria-hidden>→</span>
-        </a>
-      </CardContent>
-    </Card>
-  );
-}
-
-/* ────────────────────────────────────────────────────────────────────────── */
-/* Features                                                                   */
+/* Why choose Numeria?                                                        */
 /* ────────────────────────────────────────────────────────────────────────── */
 
 type Feature = {
   icon: LucideIcon;
+  emoji: string;
   title: string;
   description: string;
 };
 
 const FEATURES: Feature[] = [
   {
+    icon: GraduationCap,
+    emoji: "🎓",
+    title: "Quality courses",
+    description: "Rigorous scientific content with LaTeX formulas and worked exercises.",
+  },
+  {
+    icon: Globe,
+    emoji: "🌍",
+    title: "African roots",
+    description: "Examples and projects rooted in African and Togolese realities.",
+  },
+  {
+    icon: Smartphone,
+    emoji: "📱",
+    title: "100% responsive",
+    description: "Learn from your phone, tablet or computer.",
+  },
+  {
+    icon: Trophy,
+    emoji: "🏆",
+    title: "Official certificates",
+    description: "Receive a verifiable PDF certificate upon completing each paid course.",
+  },
+  {
     icon: FlaskConical,
-    title: "Laboratoires interactifs",
-    description:
-      "Des simulations PhET-style avec sliders, graphiques en temps réel, et challenges adaptatifs. L'élève manipule, observe, et apprend par l'expérimentation.",
+    emoji: "🧪",
+    title: "Interactive exercises",
+    description: "Multiple-choice questions with detailed solutions revealed only after success.",
   },
   {
-    icon: Code2,
-    title: "Sandbox Python intégrée",
-    description:
-      "Pyodide s'exécute dans le navigateur — pas d'installation. Trace des trajectoires, des orbitales, des distributions quantiques d'un clic.",
-  },
-  {
-    icon: Calculator,
-    title: "Rendu LaTeX natif",
-    description:
-      "MathJax rend toutes les formules : vecteurs, fractions, intégrales, matrices, kets et bras de Dirac. La physique s'affiche comme dans un cours.",
-  },
-  {
-    icon: LineChart,
-    title: "Évaluation adaptative",
-    description:
-      "Les exercices s'adaptent à ton niveau : bonne réponse → challenge plus dur, erreur → indice et variantes. Progression sauvegardée.",
-  },
-  {
-    icon: MessagesSquare,
-    title: "Mentorat personnalisé",
-    description:
-      "Réserve des séances de tutorat individuel avec des mentors experts. Visioconférence intégrée, paiement sécurisé, escrow automatique.",
-  },
-  {
-    icon: Users,
-    title: "Communauté active",
-    description:
-      "Forum par matière, profils étudiants, partage de solutions. Apprends en groupe, pose tes questions, aide les autres.",
+    icon: Wallet,
+    emoji: "💰",
+    title: "Accessible to all",
+    description: "Most courses are free. Mobile Money payment available.",
   },
 ];
 
-function Features() {
+function WhyChooseUs() {
   return (
-    <section id="features" className="bg-muted/30 py-20">
+    <section id="features" className="py-20">
       <div className="container mx-auto max-w-7xl px-4">
         <div className="mx-auto mb-12 max-w-2xl text-center">
           <Badge variant="secondary" className="mb-3">
-            Fonctionnalités
+            OUR STRENGTHS
           </Badge>
           <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
-            Tout ce qu&apos;il faut pour réussir
+            Why choose Numeria?
           </h2>
           <p className="mt-3 text-muted-foreground">
-            Une plateforme complète, pensée pour l&apos;apprentissage actif des
-            sciences.
+            A platform designed for African learners
           </p>
         </div>
 
@@ -357,9 +237,7 @@ function Features() {
               key={feature.title}
               className="group rounded-2xl border border-border bg-card p-6 transition-all hover:border-primary/30 hover:shadow-md"
             >
-              <div className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/20 transition-transform group-hover:scale-110">
-                <feature.icon className="h-5 w-5" />
-              </div>
+              <div className="mb-4 text-4xl">{feature.emoji}</div>
               <h3 className="text-lg font-semibold">{feature.title}</h3>
               <p className="mt-2 text-sm text-muted-foreground">
                 {feature.description}
@@ -373,52 +251,155 @@ function Features() {
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
-/* Categories preview                                                         */
+/* Testimonials                                                               */
 /* ────────────────────────────────────────────────────────────────────────── */
 
-function CategoriesPreview() {
-  const categories = [
-    { name: "Physique", count: 2, icon: Atom, color: "text-[#2DD4BF]" },
-    { name: "Mathématiques", count: 1, icon: Calculator, color: "text-[#C9A227]" },
-    { name: "Programmation", count: 1, icon: Code2, color: "text-primary" },
-  ];
+const TESTIMONIALS = [
+  {
+    initial: "M",
+    name: "Marie K.",
+    role: "Master's student",
+    quote: "The courses are excellent and adapted to our African context.",
+  },
+  {
+    initial: "J",
+    name: "Jean T.",
+    role: "Professor",
+    quote: "Finally a platform that understands our educational needs.",
+  },
+];
 
+function Testimonials() {
   return (
-    <section id="about" className="py-20">
+    <section className="bg-muted/30 py-20">
       <div className="container mx-auto max-w-7xl px-4">
-        <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
-          <div>
-            <Badge variant="secondary" className="mb-3">
-              Domaines
-            </Badge>
-            <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
-              Une plateforme multi-disciplinaire
-            </h2>
-            <p className="mt-4 text-muted-foreground">
-              Numeria Institute couvre les sciences fondamentales et
-              appliquées. Que tu prépares un examen, que tu apprends pour le
-              plaisir, ou que tu cherches une carrière en tech, tu trouveras
-              un parcours adapté.
-            </p>
-            <p className="mt-4 text-muted-foreground">
-              Tous les cours sont en français, avec des exemples concrets et
-              des exercices pensés pour les apprenants africains et
-              francophones.
-            </p>
-          </div>
+        <div className="mx-auto mb-12 max-w-2xl text-center">
+          <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
+            What our students say
+          </h2>
+        </div>
 
-          <div className="grid gap-4 sm:grid-cols-3">
-            {categories.map((cat) => (
-              <div
-                key={cat.name}
-                className="rounded-2xl border border-border bg-card p-6 text-center transition-all hover:border-primary/30 hover:shadow-md"
-              >
-                <cat.icon className={`mx-auto h-10 w-10 ${cat.color}`} />
-                <div className="mt-3 text-2xl font-bold">{cat.count}</div>
-                <div className="text-sm text-muted-foreground">{cat.name}</div>
-              </div>
-            ))}
-          </div>
+        <div className="grid gap-6 md:grid-cols-2">
+          {TESTIMONIALS.map((t) => (
+            <Card key={t.name}>
+              <CardContent className="p-6">
+                <div className="flex items-start gap-4">
+                  <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-primary text-lg font-bold text-primary-foreground">
+                    {t.initial}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold">{t.name}</p>
+                    <p className="text-xs text-muted-foreground">{t.role}</p>
+                    <p className="mt-3 text-sm text-muted-foreground">
+                      &ldquo;{t.quote}&rdquo;
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Popular courses                                                            */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+type PopularCourse = {
+  icon: LucideIcon;
+  category: string;
+  title: string;
+  description: string;
+  lessons: number;
+  level: string;
+};
+
+const POPULAR_COURSES: PopularCourse[] = [
+  {
+    icon: Code2,
+    category: "PYTHON",
+    title: "Python : de l'Algorithmique à la POO",
+    description: "Apprends Python de zéro à la POO : algorithmique, structures de données, récursivité, tri, classes, héritage.",
+    lessons: 15,
+    level: "Débutant",
+  },
+  {
+    icon: FileText,
+    category: "AUTRE",
+    title: "Scientific English for University",
+    description: "Master Scientific English: vocabulary, papers, abstracts, presentations, grammar.",
+    lessons: 11,
+    level: "Intermédiaire",
+  },
+  {
+    icon: FileText,
+    category: "INFORMATIQUE",
+    title: "LaTeX : Typographie Scientifique",
+    description: "Maîtrise LaTeX : documents, mathématiques, tableaux, figures, présentations Beamer.",
+    lessons: 10,
+    level: "Débutant",
+  },
+];
+
+function PopularCourses() {
+  return (
+    <section id="courses" className="py-20">
+      <div className="container mx-auto max-w-7xl px-4">
+        <div className="mx-auto mb-12 max-w-2xl text-center">
+          <Badge variant="secondary" className="mb-3">
+            POPULAR COURSES
+          </Badge>
+          <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
+            Start learning today
+          </h2>
+          <p className="mt-3 text-muted-foreground">
+            Mathematics, science, AI — rigorous content accessible to all levels.
+          </p>
+        </div>
+
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {POPULAR_COURSES.map((course) => (
+            <Card key={course.title} className="group flex flex-col overflow-hidden transition-all hover:shadow-lg">
+              <CardContent className="flex flex-1 flex-col p-6">
+                <div className="mb-3 flex items-center gap-2">
+                  <Badge variant="outline">{course.category}</Badge>
+                </div>
+                <h3 className="text-lg font-bold group-hover:text-primary">
+                  {course.title}
+                </h3>
+                <p className="mt-2 flex-1 text-sm text-muted-foreground">
+                  {course.description}
+                </p>
+                <div className="mt-4 flex items-center gap-3 text-xs text-muted-foreground">
+                  <span>{course.lessons} leçons</span>
+                  <span>·</span>
+                  <span>{course.level}</span>
+                </div>
+                <div className="mt-4 flex items-center justify-between">
+                  <span className="text-sm font-semibold text-[#2DD4BF]">Free</span>
+                  <Link
+                    href="/cours"
+                    className="text-sm font-semibold text-primary transition-colors group-hover:text-primary/80"
+                  >
+                    View course →
+                  </Link>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        <div className="mt-8 text-center">
+          <Link
+            href="/cours"
+            className="inline-flex items-center gap-2 rounded-xl border border-border px-6 py-3 text-sm font-semibold transition-colors hover:bg-muted"
+          >
+            View all courses
+            <ArrowRight className="h-4 w-4" />
+          </Link>
         </div>
       </div>
     </section>
@@ -434,7 +415,6 @@ function CtaBanner() {
     <section id="contact" className="py-20">
       <div className="container mx-auto max-w-7xl px-4">
         <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#1B2A4E] via-[#1B2A4E] to-[#0d1530] px-6 py-16 text-center md:px-12 md:py-24">
-          {/* Decorative glows */}
           <div
             aria-hidden
             className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-[#2DD4BF]/20 blur-3xl"
@@ -445,27 +425,25 @@ function CtaBanner() {
           />
 
           <div className="relative mx-auto max-w-2xl">
+            <Badge className="mb-4 bg-[#2DD4BF]/20 text-[#2DD4BF]">
+              JOIN US
+            </Badge>
             <h2 className="text-3xl font-bold tracking-tight text-white md:text-4xl">
-              Prêt à commencer ton apprentissage ?
+              Ready to start your scientific journey?
             </h2>
             <p className="mt-4 text-lg text-white/80">
-              Inscription gratuite. Accès immédiat à tous les cours gratuits.
-              Aucune carte bancaire requise.
+              Join thousands of learners transforming their future through science.
             </p>
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
-              <a
-                href="/signup"
-                className="inline-flex items-center justify-center rounded-xl bg-[#2DD4BF] px-8 py-3.5 text-sm font-semibold text-[#1B2A4E] shadow-lg shadow-[#2DD4BF]/25 transition-transform hover:scale-105"
-              >
-                Créer un compte gratuit
-              </a>
-              <a
-                href="#courses"
-                className="inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/5 px-8 py-3.5 text-sm font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white/10"
-              >
-                Parcourir le catalogue
-              </a>
-            </div>
+            <Link
+              href="/signup"
+              className="mt-8 inline-flex items-center gap-2 rounded-xl bg-[#2DD4BF] px-8 py-3.5 text-sm font-semibold text-[#1B2A4E] shadow-lg shadow-[#2DD4BF]/25 transition-transform hover:scale-105"
+            >
+              Create my account for free
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+            <p className="mt-4 text-xs text-white/40">
+              No credit card required · Free courses available immediately
+            </p>
           </div>
         </div>
       </div>
