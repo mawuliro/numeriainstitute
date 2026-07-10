@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { auth, signOut } from "@/lib/auth";
 import { NumeriaLogoFull } from "@/components/numeria-logo";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 
 const NAV_ITEMS = [
@@ -37,8 +38,18 @@ export async function SiteHeader() {
           ))}
         </nav>
 
-        {/* Auth buttons */}
-        <div className="flex items-center gap-2">
+        {/* Right side: theme toggle, lang, auth */}
+        <div className="flex items-center gap-1.5">
+          {/* Language flags */}
+          <div className="hidden items-center gap-0.5 sm:flex">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg text-sm" title="Français">🇫🇷</span>
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg text-sm opacity-50" title="English">🇬🇧</span>
+          </div>
+
+          {/* Dark mode toggle */}
+          <ThemeToggle />
+
+          {/* Auth */}
           {session?.user ? (
             <>
               <Link
@@ -53,12 +64,7 @@ export async function SiteHeader() {
                   await signOut({ redirectTo: "/" });
                 }}
               >
-                <Button
-                  type="submit"
-                  variant="ghost"
-                  size="sm"
-                  className="text-sm"
-                >
+                <Button type="submit" variant="ghost" size="sm" className="text-sm">
                   Log out
                 </Button>
               </form>
