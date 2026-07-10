@@ -65,7 +65,7 @@ export default async function AdminCourseDetailPage({
         <CardHeader>
           <CardTitle className="text-base">Informations</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-3 text-sm">
+        <CardContent className="grid gap-3 sm:gap-4 grid-cols-2 sm:grid-cols-3 text-sm">
           <div>
             <p className="text-xs font-semibold uppercase text-muted-foreground">Slug</p>
             <p className="font-mono">{course.slug}</p>

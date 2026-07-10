@@ -8,7 +8,7 @@ export default function AboutPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
-      <main className="flex-1">
+      <main className="flex-1 pb-16 lg:pb-0">
         {/* Hero */}
         <section className="relative overflow-hidden bg-gradient-to-br from-[#1B2A4E] via-[#1B2A4E] to-[#0d1530] py-20">
           <div
@@ -85,7 +85,7 @@ export default function AboutPage() {
             <h2 className="mb-8 text-center text-2xl font-bold">
               Vision &amp; Mission
             </h2>
-            <div className="grid gap-6 md:grid-cols-2">
+            <div className="grid gap-4 sm:gap-6 sm:grid-cols-2">
               <Card>
                 <CardContent className="p-6">
                   <div className="mb-3 text-3xl">🔭</div>

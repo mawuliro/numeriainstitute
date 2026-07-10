@@ -29,14 +29,14 @@ export default async function CourseDetailPage({
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
-      <main className="flex-1">
+      <main className="flex-1 pb-16 lg:pb-0">
         {/* Hero header */}
         <section className="relative overflow-hidden bg-gradient-to-br from-[#1B2A4E] via-[#1B2A4E] to-[#0d1530]">
           <div
             aria-hidden
             className="absolute -right-32 top-10 h-96 w-96 rounded-full bg-[#2DD4BF]/20 blur-3xl"
           />
-          <div className="container mx-auto max-w-7xl px-4 py-16">
+          <div className="container mx-auto max-w-7xl px-4 py-12 sm:py-16">
             <Link
               href="/cours"
               className="mb-6 inline-flex items-center gap-1 text-sm text-white/60 transition-colors hover:text-white"
@@ -44,7 +44,7 @@ export default async function CourseDetailPage({
               ← Catalogue
             </Link>
 
-            <div className="grid gap-8 lg:grid-cols-3">
+            <div className="grid gap-6 sm:gap-8 lg:grid-cols-3">
               <div className="lg:col-span-2 text-white">
                 <Badge className="mb-4 bg-[#2DD4BF]/20 text-[#2DD4BF]">
                   {course.category}

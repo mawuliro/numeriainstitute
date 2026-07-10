@@ -32,7 +32,7 @@ export function LessonBlocksRenderer({ blocks }: { blocks: BlockWithRelations[] 
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20 lg:pb-0">
       {blocks.map((block) => {
         switch (block.blockType) {
           case "TEXT":

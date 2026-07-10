@@ -9,7 +9,7 @@ export default function MentoratPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
-      <main className="flex-1">
+      <main className="flex-1 pb-16 lg:pb-0">
         <section className="relative overflow-hidden bg-gradient-to-br from-[#1B2A4E] via-[#1B2A4E] to-[#0d1530] py-16">
           <div className="container mx-auto max-w-4xl px-4 text-center text-white">
             <HandHeart className="mx-auto mb-4 h-12 w-12 text-[#2DD4BF]" />

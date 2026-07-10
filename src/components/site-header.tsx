@@ -31,7 +31,7 @@ export async function SiteHeader() {
             <Link
               key={item.href}
               href={item.href}
-              className="rounded-lg px-2.5 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+              className="rounded-lg px-2 py-1.5 text-xs font-medium sm:px-2.5 sm:py-2 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
             >
               {item.label}
             </Link>

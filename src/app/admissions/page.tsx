@@ -9,7 +9,7 @@ export default function AdmissionsPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
-      <main className="flex-1">
+      <main className="flex-1 pb-16 lg:pb-0">
         <section className="border-b bg-muted/30 py-12">
           <div className="container mx-auto max-w-7xl px-4">
             <Badge variant="secondary" className="mb-3">

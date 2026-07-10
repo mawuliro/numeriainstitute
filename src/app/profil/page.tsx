@@ -25,7 +25,7 @@ export default async function ProfilePage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
-      <main className="flex-1">
+      <main className="flex-1 pb-16 lg:pb-0">
         <div className="container mx-auto max-w-4xl px-4 py-8">
           <h1 className="text-2xl font-bold tracking-tight md:text-3xl">My Profile</h1>
 

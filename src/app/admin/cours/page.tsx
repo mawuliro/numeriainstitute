@@ -42,7 +42,7 @@ export default async function AdminCoursesPage() {
           return (
             <Link key={course.id} href={`/admin/cours/${course.id}`}>
               <Card className="transition-all hover:shadow-md">
-                <CardContent className="flex items-center gap-4 p-4">
+                <CardContent className="flex items-center gap-3 p-3 sm:gap-4 sm:p-4">
                   <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
                     <BookOpen className="h-6 w-6" />
                   </div>

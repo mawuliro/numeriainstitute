@@ -18,7 +18,7 @@ export default function ContactPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
-      <main className="flex-1">
+      <main className="flex-1 pb-16 lg:pb-0">
         <section className="py-16">
           <div className="container mx-auto max-w-7xl px-4">
             <div className="mx-auto mb-12 max-w-2xl text-center">
@@ -31,7 +31,7 @@ export default function ContactPage() {
               </p>
             </div>
 
-            <div className="grid gap-8 lg:grid-cols-2">
+            <div className="grid gap-6 sm:gap-8 lg:grid-cols-2">
               {/* Contact form */}
               <Card>
                 <CardContent className="p-6">

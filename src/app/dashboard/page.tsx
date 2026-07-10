@@ -45,7 +45,7 @@ export default async function DashboardPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
-      <main className="flex-1">
+      <main className="flex-1 pb-16 lg:pb-0">
         <div className="container mx-auto max-w-7xl px-4 py-8">
           <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
             Bonjour, {user.name ?? user.email.split("@")[0]} 👋
@@ -55,7 +55,7 @@ export default async function DashboardPage() {
           </p>
 
           {/* Stats */}
-          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-4 grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-4">
             <Card>
               <CardContent className="flex items-center gap-3 p-4">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -130,7 +130,7 @@ export default async function DashboardPage() {
                 </CardContent>
               </Card>
             ) : (
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-3 sm:gap-4 sm:grid-cols-2">
                 {user.enrollments.map(({ course }) => {
                   const totalLessons = course.modules.reduce(
                     (sum, m) => sum + m.lessons.length,

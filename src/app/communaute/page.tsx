@@ -39,7 +39,7 @@ export default async function CommunityPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
-      <main className="flex-1">
+      <main className="flex-1 pb-16 lg:pb-0">
         <section className="relative overflow-hidden bg-gradient-to-br from-[#1B2A4E] via-[#1B2A4E] to-[#0d1530] py-12">
           <div className="container mx-auto max-w-7xl px-4 text-center text-white">
             <h1 className="text-3xl font-bold tracking-tight md:text-4xl">
@@ -75,7 +75,7 @@ export default async function CommunityPage() {
                   </CardContent>
                 </Card>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-2 sm:space-y-3">
                   {generalTopics.map((topic) => (
                     <Link key={topic.id} href={`/communaute/${topic.id}`}>
                       <Card className="transition-all hover:shadow-md">
@@ -135,7 +135,7 @@ export default async function CommunityPage() {
                     </CardContent>
                   </Card>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-2 sm:space-y-3">
                     {course.topics.map((topic) => (
                       <Link key={topic.id} href={`/communaute/${topic.id}`}>
                         <Card className="transition-all hover:shadow-md">

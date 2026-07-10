@@ -74,8 +74,8 @@ export default async function LessonPage({
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
-      <main className="flex-1">
-        <div className="container mx-auto max-w-7xl px-4 py-6">
+      <main className="flex-1 pb-16 lg:pb-0">
+        <div className="container mx-auto max-w-7xl px-4 py-4 sm:py-6">
           {/* Breadcrumb */}
           <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
             <Link href="/cours" className="hover:text-foreground">
@@ -90,7 +90,7 @@ export default async function LessonPage({
             </Link>
           </div>
 
-          <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
+          <div className="grid gap-4 sm:gap-6 lg:grid-cols-[1fr_280px]">
             {/* Main content */}
             <div className="min-w-0">
               {/* Lesson header */}

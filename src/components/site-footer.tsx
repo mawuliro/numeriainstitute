@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { NumeriaLogoFull } from "@/components/numeria-logo";
+import { MobileNav } from "@/components/mobile-nav";
 
 export function SiteFooter() {
   return (
-    <footer className="mt-auto border-t border-border/40 bg-[#1B2A4E]">
-      <div className="container mx-auto max-w-7xl px-4 py-12">
-        <div className="grid gap-8 md:grid-cols-4">
+    <>
+      <footer className="mt-auto border-t border-border/40 bg-[#1B2A4E] pb-16 lg:pb-0">
+        <div className="container mx-auto max-w-7xl px-4 py-12">
+        <div className="grid gap-6 sm:grid-cols-2 md:grid-cols-4">
           {/* Brand column */}
           <div className="space-y-4">
             <NumeriaLogoFull size={36} variant="light" />
@@ -78,5 +80,7 @@ export function SiteFooter() {
         </div>
       </div>
     </footer>
+    <MobileNav />
+    </>
   );
 }

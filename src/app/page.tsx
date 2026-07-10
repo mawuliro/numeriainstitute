@@ -23,7 +23,7 @@ export default function Home() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
-      <main className="flex-1">
+      <main className="flex-1 pb-16 lg:pb-0">
         <Hero />
         <StatsBar />
         <WhyChooseUs />
@@ -75,22 +75,22 @@ function Hero() {
         }
       `}</style>
 
-      <div className="relative container mx-auto max-w-7xl px-4 py-20 md:py-32">
+      <div className="relative container mx-auto max-w-7xl px-4 py-16 sm:py-20 md:py-32">
         <div className="mx-auto max-w-3xl text-center text-white">
           <Badge className="mb-6 bg-[#2DD4BF]/20 text-[#2DD4BF] border-[#2DD4BF]/30">
             SCIENTIFIC COMPUTING & AI
           </Badge>
 
-          <h1 className="text-4xl font-bold leading-tight tracking-tight md:text-6xl">
+          <h1 className="text-3xl font-bold leading-tight tracking-tight sm:text-4xl md:text-5xl lg:text-6xl">
             Science accessible to all curious minds
           </h1>
 
-          <p className="mx-auto mt-6 max-w-2xl text-lg text-white/80">
+          <p className="mx-auto mt-4 max-w-2xl text-base text-white/80 sm:text-lg">
             Quality scientific courses designed for African and French-speaking
             learners worldwide. From high school to advanced AI.
           </p>
 
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+          <div className="mt-6 flex flex-col items-center gap-3 sm:flex-row sm:flex-wrap sm:justify-center sm:gap-4">
             <Link
               href="/cours"
               className="inline-flex items-center gap-2 rounded-xl bg-[#2DD4BF] px-6 py-3 text-sm font-semibold text-[#1B2A4E] shadow-lg shadow-[#2DD4BF]/25 transition-transform hover:scale-105"
@@ -107,7 +107,7 @@ function Hero() {
           </div>
 
           {/* Trust indicators */}
-          <div className="mt-12 flex flex-wrap items-center justify-center gap-8 text-sm text-white/60">
+          <div className="mt-6 flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:justify-center sm:gap-4 text-sm text-white/60 sm:gap-8">
             <div className="flex items-center gap-2">
               <div className="flex -space-x-2">
                 {["A", "K", "F"].map((letter) => (
@@ -217,7 +217,7 @@ const FEATURES: Feature[] = [
 
 function WhyChooseUs() {
   return (
-    <section id="features" className="py-20">
+    <section id="features" className="py-12 sm:py-20">
       <div className="container mx-auto max-w-7xl px-4">
         <div className="mx-auto mb-12 max-w-2xl text-center">
           <Badge variant="secondary" className="mb-3">
@@ -346,7 +346,7 @@ const POPULAR_COURSES: PopularCourse[] = [
 
 function PopularCourses() {
   return (
-    <section id="courses" className="py-20">
+    <section id="courses" className="py-12 sm:py-20">
       <div className="container mx-auto max-w-7xl px-4">
         <div className="mx-auto mb-12 max-w-2xl text-center">
           <Badge variant="secondary" className="mb-3">
@@ -412,9 +412,9 @@ function PopularCourses() {
 
 function CtaBanner() {
   return (
-    <section id="contact" className="py-20">
+    <section id="contact" className="py-12 sm:py-20">
       <div className="container mx-auto max-w-7xl px-4">
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#1B2A4E] via-[#1B2A4E] to-[#0d1530] px-6 py-16 text-center md:px-12 md:py-24">
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#1B2A4E] via-[#1B2A4E] to-[#0d1530] px-4 py-12 text-center sm:px-6 sm:py-16 md:px-12 md:py-24">
           <div
             aria-hidden
             className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-[#2DD4BF]/20 blur-3xl"
@@ -428,10 +428,10 @@ function CtaBanner() {
             <Badge className="mb-4 bg-[#2DD4BF]/20 text-[#2DD4BF]">
               JOIN US
             </Badge>
-            <h2 className="text-3xl font-bold tracking-tight text-white md:text-4xl">
+            <h2 className="text-2xl font-bold tracking-tight text-white sm:text-3xl md:text-4xl">
               Ready to start your scientific journey?
             </h2>
-            <p className="mt-4 text-lg text-white/80">
+            <p className="mt-3 text-base text-white/80 sm:text-lg">
               Join thousands of learners transforming their future through science.
             </p>
             <Link

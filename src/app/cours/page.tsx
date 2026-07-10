@@ -28,7 +28,7 @@ export default async function CataloguePage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
-      <main className="flex-1">
+      <main className="flex-1 pb-16 lg:pb-0">
         {/* Header */}
         <section className="border-b bg-muted/30">
           <div className="container mx-auto max-w-7xl px-4 py-12">
@@ -55,7 +55,7 @@ export default async function CataloguePage() {
                 </p>
               </div>
             ) : (
-              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-4 sm:gap-6 sm:grid-cols-2 lg:grid-cols-3">
                 {courses.map((course) => {
                   const Icon =
                     CATEGORY_ICONS[course.category] ?? FileText;

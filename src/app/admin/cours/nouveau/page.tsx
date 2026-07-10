@@ -81,7 +81,7 @@ export default function NewCoursePage() {
           />
         </div>
 
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div className="space-y-2">
             <label className="text-sm font-medium">Catégorie</label>
             <select name="category" className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm">
