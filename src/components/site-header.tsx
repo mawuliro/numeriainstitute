@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { auth, signOut } from "@/lib/auth";
+import { db } from "@/lib/db";
 import { NumeriaLogoFull } from "@/components/numeria-logo";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { NotificationBell } from "@/components/notification-bell";
 import { Button } from "@/components/ui/button";
 import { MobileMenu } from "@/components/mobile-menu";
 
@@ -19,16 +21,34 @@ const NAV_ITEMS = [
 export async function SiteHeader() {
   const session = await auth();
 
+  let notifications: {
+    id: string;
+    title: string;
+    message: string;
+    link: string | null;
+    isRead: boolean;
+    createdAt: string;
+  }[] = [];
+
+  if (session?.user) {
+    const dbNotifs = await db.notification.findMany({
+      where: { userId: session.user.id },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+    });
+    notifications = dbNotifs.map((n) => ({
+      ...n,
+      createdAt: n.createdAt.toISOString(),
+    }));
+  }
+
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/80 backdrop-blur-xl">
       <div className="container mx-auto flex h-14 max-w-7xl items-center justify-between px-3 sm:h-16 sm:px-4">
-        {/* Left: logo + desktop nav */}
         <div className="flex items-center gap-4">
           <Link href="/" className="flex items-center gap-2">
             <NumeriaLogoFull size={32} variant="dark" />
           </Link>
-
-          {/* Desktop nav — hidden on mobile/tablet */}
           <nav className="hidden items-center gap-0.5 lg:flex">
             {NAV_ITEMS.map((item) => (
               <Link
@@ -42,20 +62,16 @@ export async function SiteHeader() {
           </nav>
         </div>
 
-        {/* Right: actions */}
         <div className="flex items-center gap-1.5">
-          {/* Language flags — hidden on mobile */}
           <div className="hidden items-center gap-0.5 sm:flex">
             <span className="flex h-8 w-8 items-center justify-center rounded-lg text-sm" title="Français">🇫🇷</span>
             <span className="flex h-8 w-8 items-center justify-center rounded-lg text-sm opacity-50" title="English">🇬🇧</span>
           </div>
-
-          {/* Dark mode toggle */}
           <ThemeToggle />
 
-          {/* Auth — compact on mobile */}
           {session?.user ? (
             <>
+              <NotificationBell initialNotifications={notifications} />
               <Link
                 href="/dashboard"
                 className="hidden rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:block"
@@ -92,7 +108,6 @@ export async function SiteHeader() {
             </>
           )}
 
-          {/* Hamburger menu — mobile only */}
           <div className="lg:hidden">
             <MobileMenu navItems={NAV_ITEMS} isLoggedIn={!!session?.user} />
           </div>

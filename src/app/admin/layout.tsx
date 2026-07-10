@@ -14,6 +14,7 @@ import {
 const ADMIN_NAV: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/cours", label: "Cours", icon: BookOpen },
+  { href: "/admin/blog", label: "Blog", icon: FileText },
   { href: "/admin/utilisateurs", label: "Utilisateurs", icon: Users },
 ];
 
