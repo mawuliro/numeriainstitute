@@ -127,3 +127,47 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ── Lesson content responsive fixes ── */
+.prose pre {
+  overflow-x: auto;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
+.prose img {
+  max-width: 100%;
+  height: auto;
+}
+
+.prose table {
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* MathJax container should never overflow */
+mjx-container {
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  padding: 0.25rem 0;
+}
+
+/* Prevent long unbreakable strings from breaking layout */
+.prose p, .prose li, .prose td, .prose th {
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Code blocks: smaller font on mobile */
+@media (max-width: 640px) {
+  .prose pre code {
+    font-size: 0.75rem;
+  }
+  .prose p, .prose li {
+    font-size: 0.875rem;
+    line-height: 1.6;
+  }
+}
