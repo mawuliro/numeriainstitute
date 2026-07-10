@@ -1,32 +1,22 @@
+export const dynamic = "force-dynamic";
+
+import { db } from "@/lib/db";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Newspaper, ArrowRight } from "lucide-react";
 import Link from "next/link";
+import { Newspaper, ArrowRight, Calendar } from "lucide-react";
 
-const POSTS = [
-  {
-    title: "Welcome to Numeria Institute",
-    excerpt: "Discover our mission to make science accessible to all African learners.",
-    date: "2025-01-15",
-    category: "Announcement",
-  },
-  {
-    title: "Why Python is essential for African students",
-    excerpt: "Python has become the lingua franca of data science, AI, and scientific computing.",
-    date: "2025-02-01",
-    category: "Programming",
-  },
-  {
-    title: "The importance of LaTeX in scientific writing",
-    excerpt: "Learn why LaTeX remains the gold standard for scientific documents.",
-    date: "2025-02-15",
-    category: "Tools",
-  },
-];
+export default async function BlogPage() {
+  const posts = await db.blogPost.findMany({
+    where: { isPublished: true },
+    orderBy: { publishedAt: "desc" },
+    include: {
+      author: { select: { id: true, name: true, email: true } },
+    },
+  });
 
-export default function BlogPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
@@ -48,30 +38,50 @@ export default function BlogPage() {
 
         <section className="py-12">
           <div className="container mx-auto max-w-7xl px-4">
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {POSTS.map((post) => (
-                <Card key={post.title} className="group flex flex-col overflow-hidden transition-all hover:shadow-lg">
-                  <CardContent className="flex flex-1 flex-col p-6">
-                    <div className="mb-2 flex items-center gap-2">
-                      <Badge variant="outline">{post.category}</Badge>
-                      <span className="text-xs text-muted-foreground">{post.date}</span>
-                    </div>
-                    <h2 className="text-lg font-bold group-hover:text-primary">
-                      {post.title}
-                    </h2>
-                    <p className="mt-2 flex-1 text-sm text-muted-foreground">
-                      {post.excerpt}
-                    </p>
-                    <Link
-                      href="/blog"
-                      className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-primary"
-                    >
-                      Read more <ArrowRight className="h-3 w-3" />
-                    </Link>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+            {posts.length === 0 ? (
+              <div className="rounded-2xl border border-dashed p-12 text-center">
+                <p className="text-muted-foreground">
+                  Aucun article publié pour le moment. Reviens bientôt !
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {posts.map((post) => (
+                  <Link key={post.id} href={`/blog/${post.slug}`}>
+                    <Card className="group flex h-full flex-col overflow-hidden transition-all hover:shadow-lg">
+                      <CardContent className="flex flex-1 flex-col p-6">
+                        <div className="mb-2 flex items-center gap-2">
+                          <Badge variant="outline">{post.category}</Badge>
+                          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <Calendar className="h-3 w-3" />
+                            {post.publishedAt
+                              ? new Date(post.publishedAt).toLocaleDateString("fr-FR")
+                              : "Brouillon"}
+                          </span>
+                        </div>
+                        <h2 className="text-lg font-bold group-hover:text-primary">
+                          {post.title}
+                        </h2>
+                        {post.excerpt && (
+                          <p className="mt-2 flex-1 text-sm text-muted-foreground">
+                            {post.excerpt}
+                          </p>
+                        )}
+                        <div className="mt-4 flex items-center gap-2">
+                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+                            {(post.author.name ?? post.author.email)[0].toUpperCase()}
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {post.author.name ?? post.author.email.split("@")[0]}
+                          </span>
+                          <ArrowRight className="ml-auto h-4 w-4 text-primary opacity-0 transition-opacity group-hover:opacity-100" />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
         </section>
       </main>

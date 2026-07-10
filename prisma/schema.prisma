@@ -71,6 +71,7 @@ model Course {
   modules     CourseModule[]
   lessons     CourseLesson[]
   enrollments Enrollment[]
+  topics      CommunityTopic[]
 
   @@index([slug])
   @@index([status])
@@ -412,6 +413,7 @@ model BlogPost {
   content     String
   coverUrl    String?
   authorId     String
+  category    String   @default("General")
   isPublished Boolean  @default(false)
   publishedAt DateTime?
   createdAt   DateTime @default(now())
@@ -420,12 +422,13 @@ model BlogPost {
   author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
   @@index([slug])
+  @@index([isPublished])
 }
 
 model CommunityTopic {
   id          String   @id @default(cuid())
   title       String
-  categoryId  String
+  courseId     String?
   authorId     String
   isPinned    Boolean  @default(false)
   isLocked    Boolean  @default(false)
@@ -433,10 +436,12 @@ model CommunityTopic {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  posts  CommunityPost[]
+  author  User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  course  Course?        @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  posts   CommunityPost[]
 
-  @@index([categoryId])
+  @@index([courseId])
+  @@index([authorId])
 }
 
 model CommunityPost {

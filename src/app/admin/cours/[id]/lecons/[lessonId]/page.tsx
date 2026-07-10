@@ -11,7 +11,7 @@ import {
   addSandboxBlockAction,
   addMcqBlockAction,
   deleteBlockAction,
-} from "../../actions";
+} from "../actions";
 
 const BLOCK_TYPES = [
   { type: "TEXT", label: "Texte", icon: FileText, color: "text-blue-500" },
