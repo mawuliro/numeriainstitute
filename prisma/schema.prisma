@@ -38,6 +38,8 @@ model User {
   communityPosts   CommunityPost[]
   mentorProfile    MentorProfile?
   menteeProfile    MenteeProfile?
+  meetings         Meeting[]
+  meetingParticipants MeetingParticipant[]
 }
 
 enum UserRole {
@@ -483,4 +485,45 @@ model MenteeProfile {
   createdAt   DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Videoconference
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Meeting {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  roomName    String   @unique  // Daily.co room name
+  hostId      String
+  startTime   DateTime
+  endTime     DateTime?
+  isActive    Boolean  @default(true)
+  isWaitingRoomEnabled Boolean @default(true)
+  createdAt   DateTime @default(now())
+
+  host         User               @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  participants MeetingParticipant[]
+
+  @@index([hostId])
+  @@index([isActive])
+}
+
+model MeetingParticipant {
+  id          String   @id @default(cuid())
+  meetingId   String
+  userId      String?
+  guestName   String?
+  role        String   @default("participant")  // "host", "co-host", "participant"
+  status      String   @default("waiting")       // "waiting", "admitted", "removed", "left"
+  joinedAt    DateTime?
+  leftAt      DateTime?
+  createdAt   DateTime @default(now())
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user    User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId])
+  @@index([userId])
 }

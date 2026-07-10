@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookOpen, Home, MessageSquare, FileText, LayoutGrid } from "lucide-react";
+import { BookOpen, Home, MessageSquare, Video, LayoutGrid } from "lucide-react";
 
 const MOBILE_NAV = [
   { href: "/", label: "Home", icon: Home },
   { href: "/cours", label: "Courses", icon: BookOpen },
+  { href: "/visioconference", label: "Video", icon: Video },
   { href: "/communaute", label: "Forum", icon: MessageSquare },
-  { href: "/blog", label: "Blog", icon: FileText },
   { href: "/dashboard", label: "Dashboard", icon: LayoutGrid },
 ];
 
