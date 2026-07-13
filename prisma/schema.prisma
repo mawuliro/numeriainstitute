@@ -24,6 +24,13 @@ model User {
   avatarUrl     String?
   bio           String?
   preferredLanguage String @default("fr")
+  // Security fields
+  failedLoginAttempts Int  @default(0)
+  lockedUntil         DateTime?
+  emailVerifyToken    String?
+  emailVerifyExpires  DateTime?
+  passwordResetToken  String?
+  passwordResetExpires DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

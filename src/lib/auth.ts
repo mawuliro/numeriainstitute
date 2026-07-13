@@ -31,6 +31,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           return null;
         }
 
+        // Check if account is locked
+        if (user.lockedUntil && user.lockedUntil > new Date()) {
+          return null;
+        }
+
+        // Check if email is verified
+        if (!user.isVerified) {
+          return null;
+        }
+
         const isValid = await bcrypt.compare(
           credentials.password as string,
           user.passwordHash,
