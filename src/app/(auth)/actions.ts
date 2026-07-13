@@ -61,10 +61,16 @@ export async function signupAction(formData: FormData) {
   });
 
   // Send verification email
-  await sendVerificationEmail(email, name, token, BASE_URL);
+  const emailSent = await sendVerificationEmail(email, name, token, BASE_URL);
 
   // Redirect to "check your email" page
-  redirect(`/verifier-email-sent?email=${encodeURIComponent(email)}`);
+  // Pass emailSent status so we can show the link directly if email failed
+  const params = new URLSearchParams({ email });
+  if (!emailSent) {
+    params.set("failed", "true");
+    params.set("token", token);
+  }
+  redirect(`/verifier-email-sent?${params.toString()}`);
 }
 
 // ── Login ──

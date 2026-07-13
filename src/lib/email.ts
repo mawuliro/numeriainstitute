@@ -15,12 +15,19 @@ export async function sendEmail({ to, subject, html }: EmailParams): Promise<boo
 
   if (!apiKey) {
     // Dev mode — just log the email
-    console.log(`📧 Email to ${to}: ${subject}`);
-    console.log(html.substring(0, 200) + "...");
+    console.log(`📧 [DEV] Email to ${to}: ${subject}`);
+    console.log(html.substring(0, 300) + "...");
+    console.log("⚠️ Set BREVO_API_KEY to send real emails");
     return true;
   }
 
   try {
+    // Use the Brevo default sender (no domain verification needed)
+    // The sender email must match a verified sender in Brevo
+    // For free accounts, use the email you registered with on Brevo
+    const senderEmail = process.env.BREVO_SENDER_EMAIL || "noreply@brevo.com";
+    const senderName = process.env.BREVO_SENDER_NAME || "Numeria Institute";
+
     const response = await fetch("https://api.brevo.com/v3/smtp/email", {
       method: "POST",
       headers: {
@@ -29,8 +36,8 @@ export async function sendEmail({ to, subject, html }: EmailParams): Promise<boo
       },
       body: JSON.stringify({
         sender: {
-          name: "Numeria Institute",
-          email: "noreply@numeria-institute.org",
+          name: senderName,
+          email: senderEmail,
         },
         to: [{ email: to }],
         subject,
@@ -39,14 +46,16 @@ export async function sendEmail({ to, subject, html }: EmailParams): Promise<boo
     });
 
     if (!response.ok) {
-      const error = await response.text();
-      console.error("Brevo email send failed:", error);
+      const errorText = await response.text();
+      console.error("Brevo API error:", response.status, errorText);
       return false;
     }
 
+    const data = await response.json();
+    console.log("✅ Email sent:", data.messageId || "success");
     return true;
   } catch (error) {
-    console.error("Email error:", error);
+    console.error("Email send error:", error);
     return false;
   }
 }
