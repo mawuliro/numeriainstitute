@@ -77,8 +77,6 @@ export default async function VerifyEmailPage({
   }
 
   // Verify the email
-  const result = await verifyEmailAction(new FormData() as FormData & { get: (key: string) => string });
-  // Actually call with token
   const formData = new FormData();
   formData.set("token", token);
   const verifyResult = await verifyEmailAction(formData);

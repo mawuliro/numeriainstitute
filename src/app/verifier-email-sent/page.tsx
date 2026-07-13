@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { NumeriaLogo } from "@/components/numeria-logo";
 import { MailCheck, AlertCircle } from "lucide-react";
 import Link from "next/link";
