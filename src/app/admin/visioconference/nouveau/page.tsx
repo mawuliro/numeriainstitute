@@ -59,18 +59,6 @@ export default function NewMeetingPage() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  name="waitingRoom"
-                  defaultChecked
-                  className="h-4 w-4 accent-[#2DD4BF]"
-                />
-                <span className="text-sm">Activer la salle d'attente (les participants doivent être admis par l'organisateur)</span>
-              </label>
-            </div>
-
             <div className="flex gap-3 pt-2">
               <button
                 type="submit"

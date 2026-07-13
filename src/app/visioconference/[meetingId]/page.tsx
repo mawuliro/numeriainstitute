@@ -78,7 +78,6 @@ export default async function MeetingPage({
         title={meeting.title}
         isHost={!!isHost}
         userName={displayName}
-        waitingRoomEnabled={meeting.isWaitingRoomEnabled}
       />
     </div>
   );
