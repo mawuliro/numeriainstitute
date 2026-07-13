@@ -1,6 +1,7 @@
 /**
- * Email service — sends verification emails using Resend API.
- * Falls back to console.log if RESEND_API_KEY is not set (dev mode).
+ * Email service — sends verification emails using Brevo (ex-Sendinblue) API.
+ * Free plan: 300 emails/day.
+ * Falls back to console.log if BREVO_API_KEY is not set (dev mode).
  */
 
 interface EmailParams {
@@ -10,32 +11,36 @@ interface EmailParams {
 }
 
 export async function sendEmail({ to, subject, html }: EmailParams): Promise<boolean> {
-  const apiKey = process.env.RESEND_API_KEY;
+  const apiKey = process.env.BREVO_API_KEY;
 
   if (!apiKey) {
     // Dev mode — just log the email
     console.log(`📧 Email to ${to}: ${subject}`);
-    console.log(html);
+    console.log(html.substring(0, 200) + "...");
     return true;
   }
 
   try {
-    const response = await fetch("https://api.resend.com/emails", {
+    const response = await fetch("https://api.brevo.com/v3/smtp/email", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+        "api-key": apiKey,
       },
       body: JSON.stringify({
-        from: "Numeria Institute <noreply@numeria-institute.org>",
-        to: [to],
+        sender: {
+          name: "Numeria Institute",
+          email: "noreply@numeria-institute.org",
+        },
+        to: [{ email: to }],
         subject,
-        html,
+        htmlContent: html,
       }),
     });
 
     if (!response.ok) {
-      console.error("Email send failed:", await response.text());
+      const error = await response.text();
+      console.error("Brevo email send failed:", error);
       return false;
     }
 
