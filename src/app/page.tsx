@@ -18,18 +18,20 @@ import { NumeriaLogo } from "@/components/numeria-logo";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
+import { getLocale, t, type Locale } from "@/lib/i18n";
 
-export default function Home() {
+export default async function Home() {
+  const locale = await getLocale();
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
       <main className="flex-1 pb-16 lg:pb-0">
-        <Hero />
-        <StatsBar />
-        <WhyChooseUs />
-        <Testimonials />
-        <PopularCourses />
-        <CtaBanner />
+        <Hero locale={locale} />
+        <StatsBar locale={locale} />
+        <WhyChooseUs locale={locale} />
+        <Testimonials locale={locale} />
+        <PopularCourses locale={locale} />
+        <CtaBanner locale={locale} />
       </main>
       <SiteFooter />
     </div>
@@ -47,7 +49,7 @@ const MATH_SYMBOLS = [
   "{ x ∈ ℝ : x > 0 }",
 ];
 
-function Hero() {
+function Hero({ locale }: { locale: Locale }) {
   return (
     <section className="relative overflow-hidden bg-gradient-to-br from-[#1B2A4E] via-[#1B2A4E] to-[#0d1530]">
       {/* Floating math symbols */}
@@ -78,16 +80,15 @@ function Hero() {
       <div className="relative container mx-auto max-w-7xl px-4 py-16 sm:py-20 md:py-32">
         <div className="mx-auto max-w-3xl text-center text-white">
           <Badge className="mb-6 bg-[#2DD4BF]/20 text-[#2DD4BF] border-[#2DD4BF]/30">
-            SCIENTIFIC COMPUTING & AI
+            {t(locale, "home.badge")}
           </Badge>
 
           <h1 className="text-3xl font-bold leading-tight tracking-tight sm:text-4xl md:text-5xl lg:text-6xl">
-            Science accessible to all curious minds
+            {t(locale, "home.title")}
           </h1>
 
           <p className="mx-auto mt-4 max-w-2xl text-base text-white/80 sm:text-lg">
-            Quality scientific courses designed for African and French-speaking
-            learners worldwide. From high school to advanced AI.
+            {t(locale, "home.subtitle")}
           </p>
 
           <div className="mt-6 flex flex-col items-center gap-3 sm:flex-row sm:flex-wrap sm:justify-center sm:gap-4">
@@ -95,14 +96,14 @@ function Hero() {
               href="/cours"
               className="inline-flex items-center gap-2 rounded-xl bg-[#2DD4BF] px-6 py-3 text-sm font-semibold text-[#1B2A4E] shadow-lg shadow-[#2DD4BF]/25 transition-transform hover:scale-105"
             >
-              Discover courses
+              {t(locale, "home.discoverCourses")}
               <ArrowRight className="h-4 w-4" />
             </Link>
             <Link
               href="/signup"
               className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/5 px-6 py-3 text-sm font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white/10"
             >
-              Create account
+              {t(locale, "home.createAccount")}
             </Link>
           </div>
 
@@ -119,7 +120,7 @@ function Hero() {
                   </div>
                 ))}
               </div>
-              <span>2+ students</span>
+              <span>2+ {t(locale, "home.students")}</span>
             </div>
             <div className="flex items-center gap-1">
               {[...Array(5)].map((_, i) => (
@@ -138,11 +139,11 @@ function Hero() {
 /* Stats bar                                                                  */
 /* ────────────────────────────────────────────────────────────────────────── */
 
-function StatsBar() {
+function StatsBar({ locale }: { locale: Locale }) {
   const stats = [
-    { value: "2+", label: "Enrolled students" },
-    { value: "5", label: "Available courses" },
-    { value: "5", label: "Countries represented" },
+    { value: "2+", label: t(locale, "home.students") },
+    { value: "5", label: t(locale, "home.availableCourses") },
+    { value: "5", label: t(locale, "home.countries") },
   ];
 
   return (
@@ -172,75 +173,77 @@ function StatsBar() {
 type Feature = {
   icon: LucideIcon;
   emoji: string;
-  title: string;
-  description: string;
+  titleKey: string;
+  descriptionKey: string;
 };
 
 const FEATURES: Feature[] = [
   {
     icon: GraduationCap,
     emoji: "🎓",
-    title: "Quality courses",
-    description: "Rigorous scientific content with LaTeX formulas and worked exercises.",
+    titleKey: "feature.quality",
+    descriptionKey: "feature.qualityDesc",
   },
   {
     icon: Globe,
     emoji: "🌍",
-    title: "African roots",
-    description: "Examples and projects rooted in African and Togolese realities.",
+    titleKey: "feature.african",
+    descriptionKey: "feature.africanDesc",
   },
   {
     icon: Smartphone,
     emoji: "📱",
-    title: "100% responsive",
-    description: "Learn from your phone, tablet or computer.",
+    titleKey: "feature.responsive",
+    descriptionKey: "feature.responsiveDesc",
   },
   {
     icon: Trophy,
     emoji: "🏆",
-    title: "Official certificates",
-    description: "Receive a verifiable PDF certificate upon completing each paid course.",
+    titleKey: "feature.certificates",
+    descriptionKey: "feature.certificatesDesc",
   },
   {
     icon: FlaskConical,
     emoji: "🧪",
-    title: "Interactive exercises",
-    description: "Multiple-choice questions with detailed solutions revealed only after success.",
+    titleKey: "feature.interactive",
+    descriptionKey: "feature.interactiveDesc",
   },
   {
     icon: Wallet,
     emoji: "💰",
-    title: "Accessible to all",
-    description: "Most courses are free. Mobile Money payment available.",
+    titleKey: "feature.accessible",
+    descriptionKey: "feature.accessibleDesc",
   },
 ];
 
-function WhyChooseUs() {
+function WhyChooseUs({ locale }: { locale: Locale }) {
   return (
     <section id="features" className="py-12 sm:py-20">
       <div className="container mx-auto max-w-7xl px-4">
         <div className="mx-auto mb-12 max-w-2xl text-center">
           <Badge variant="secondary" className="mb-3">
-            OUR STRENGTHS
+            {t(locale, "home.ourStrengths")}
           </Badge>
           <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
-            Why choose Numeria?
+            {t(locale, "home.whyChoose")}
           </h2>
           <p className="mt-3 text-muted-foreground">
-            A platform designed for African learners
+            {t(locale, "home.whyChooseSub")}
           </p>
         </div>
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {FEATURES.map((feature) => (
             <div
-              key={feature.title}
+              key={feature.titleKey}
               className="group rounded-2xl border border-border bg-card p-6 transition-all hover:border-primary/30 hover:shadow-md"
             >
               <div className="mb-4 text-4xl">{feature.emoji}</div>
-              <h3 className="text-lg font-semibold">{feature.title}</h3>
+              <h3 className="text-lg font-semibold">
+                {t(locale, feature.titleKey)}
+              </h3>
               <p className="mt-2 text-sm text-muted-foreground">
-                {feature.description}
+                {t(locale, feature.descriptionKey)}
               </p>
             </div>
           ))}
@@ -269,29 +272,29 @@ const TESTIMONIALS = [
   },
 ];
 
-function Testimonials() {
+function Testimonials({ locale }: { locale: Locale }) {
   return (
     <section className="bg-muted/30 py-20">
       <div className="container mx-auto max-w-7xl px-4">
         <div className="mx-auto mb-12 max-w-2xl text-center">
           <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
-            What our students say
+            {t(locale, "home.testimonials")}
           </h2>
         </div>
 
         <div className="grid gap-6 md:grid-cols-2">
-          {TESTIMONIALS.map((t) => (
-            <Card key={t.name}>
+          {TESTIMONIALS.map((testimonial) => (
+            <Card key={testimonial.name}>
               <CardContent className="p-6">
                 <div className="flex items-start gap-4">
                   <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-primary text-lg font-bold text-primary-foreground">
-                    {t.initial}
+                    {testimonial.initial}
                   </div>
                   <div>
-                    <p className="text-sm font-semibold">{t.name}</p>
-                    <p className="text-xs text-muted-foreground">{t.role}</p>
+                    <p className="text-sm font-semibold">{testimonial.name}</p>
+                    <p className="text-xs text-muted-foreground">{testimonial.role}</p>
                     <p className="mt-3 text-sm text-muted-foreground">
-                      &ldquo;{t.quote}&rdquo;
+                      &ldquo;{testimonial.quote}&rdquo;
                     </p>
                   </div>
                 </div>
@@ -344,19 +347,19 @@ const POPULAR_COURSES: PopularCourse[] = [
   },
 ];
 
-function PopularCourses() {
+function PopularCourses({ locale }: { locale: Locale }) {
   return (
     <section id="courses" className="py-12 sm:py-20">
       <div className="container mx-auto max-w-7xl px-4">
         <div className="mx-auto mb-12 max-w-2xl text-center">
           <Badge variant="secondary" className="mb-3">
-            POPULAR COURSES
+            {t(locale, "home.popularCourses")}
           </Badge>
           <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
-            Start learning today
+            {t(locale, "home.startLearning")}
           </h2>
           <p className="mt-3 text-muted-foreground">
-            Mathematics, science, AI — rigorous content accessible to all levels.
+            {t(locale, "home.startLearningSub")}
           </p>
         </div>
 
@@ -374,17 +377,19 @@ function PopularCourses() {
                   {course.description}
                 </p>
                 <div className="mt-4 flex items-center gap-3 text-xs text-muted-foreground">
-                  <span>{course.lessons} leçons</span>
+                  <span>{course.lessons} {t(locale, "home.lessons")}</span>
                   <span>·</span>
                   <span>{course.level}</span>
                 </div>
                 <div className="mt-4 flex items-center justify-between">
-                  <span className="text-sm font-semibold text-[#2DD4BF]">Free</span>
+                  <span className="text-sm font-semibold text-[#2DD4BF]">
+                    {t(locale, "home.free")}
+                  </span>
                   <Link
                     href="/cours"
                     className="text-sm font-semibold text-primary transition-colors group-hover:text-primary/80"
                   >
-                    View course →
+                    {t(locale, "home.viewCourse")} →
                   </Link>
                 </div>
               </CardContent>
@@ -397,7 +402,7 @@ function PopularCourses() {
             href="/cours"
             className="inline-flex items-center gap-2 rounded-xl border border-border px-6 py-3 text-sm font-semibold transition-colors hover:bg-muted"
           >
-            View all courses
+            {t(locale, "home.viewAllCourses")}
             <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
@@ -410,7 +415,7 @@ function PopularCourses() {
 /* CTA banner                                                                 */
 /* ────────────────────────────────────────────────────────────────────────── */
 
-function CtaBanner() {
+function CtaBanner({ locale }: { locale: Locale }) {
   return (
     <section id="contact" className="py-12 sm:py-20">
       <div className="container mx-auto max-w-7xl px-4">
@@ -426,23 +431,23 @@ function CtaBanner() {
 
           <div className="relative mx-auto max-w-2xl">
             <Badge className="mb-4 bg-[#2DD4BF]/20 text-[#2DD4BF]">
-              JOIN US
+              {t(locale, "home.joinUs")}
             </Badge>
             <h2 className="text-2xl font-bold tracking-tight text-white sm:text-3xl md:text-4xl">
-              Ready to start your scientific journey?
+              {t(locale, "home.ctaTitle")}
             </h2>
             <p className="mt-3 text-base text-white/80 sm:text-lg">
-              Join thousands of learners transforming their future through science.
+              {t(locale, "home.ctaSubtitle")}
             </p>
             <Link
               href="/signup"
               className="mt-8 inline-flex items-center gap-2 rounded-xl bg-[#2DD4BF] px-8 py-3.5 text-sm font-semibold text-[#1B2A4E] shadow-lg shadow-[#2DD4BF]/25 transition-transform hover:scale-105"
             >
-              Create my account for free
+              {t(locale, "home.ctaButton")}
               <ArrowRight className="h-4 w-4" />
             </Link>
             <p className="mt-4 text-xs text-white/40">
-              No credit card required · Free courses available immediately
+              {t(locale, "home.noCard")}
             </p>
           </div>
         </div>

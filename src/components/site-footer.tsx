@@ -1,8 +1,45 @@
 import Link from "next/link";
 import { NumeriaLogoFull } from "@/components/numeria-logo";
 import { MobileNav } from "@/components/mobile-nav";
+import { getLocale, t } from "@/lib/i18n";
 
-export function SiteFooter() {
+export async function SiteFooter() {
+  const locale = await getLocale();
+  const year = new Date().getFullYear();
+
+  const columns = [
+    {
+      title: t(locale, "footer.courses"),
+      links: [
+        { label: t(locale, "footer.allCourses"), href: "/cours" },
+        { label: "Python · Algorithmique", href: "/cours" },
+        { label: "Mécanique Classique", href: "/cours" },
+        { label: "Mécanique Quantique I", href: "/cours" },
+        { label: "LaTeX", href: "/cours" },
+      ],
+    },
+    {
+      title: t(locale, "footer.platform"),
+      links: [
+        { label: t(locale, "nav.training"), href: "/formations" },
+        { label: t(locale, "nav.blog"), href: "/blog" },
+        { label: t(locale, "nav.community"), href: "/communaute" },
+        { label: t(locale, "nav.mentorship"), href: "/mentorat" },
+        { label: t(locale, "nav.applications"), href: "/admissions" },
+      ],
+    },
+    {
+      title: t(locale, "footer.resources"),
+      links: [
+        { label: t(locale, "footer.about"), href: "/a-propos" },
+        { label: t(locale, "footer.contact"), href: "/contact" },
+        { label: t(locale, "footer.faq"), href: "/contact" },
+        { label: t(locale, "footer.terms"), href: "/contact" },
+        { label: t(locale, "footer.privacy"), href: "/contact" },
+      ],
+    },
+  ];
+
   return (
     <>
       <footer className="mt-auto border-t border-border/40 bg-[#1B2A4E] pb-16 lg:pb-0">
@@ -12,44 +49,12 @@ export function SiteFooter() {
           <div className="space-y-4">
             <NumeriaLogoFull size={36} variant="light" />
             <p className="text-sm text-white/60">
-              Quality scientific courses designed for African and French-speaking
-              learners worldwide. From high school to advanced AI.
+              {t(locale, "footer.subtitle")}
             </p>
           </div>
 
           {/* Links columns */}
-          {[
-            {
-              title: "Courses",
-              links: [
-                { label: "All courses", href: "/cours" },
-                { label: "Python · Algorithmique", href: "/cours" },
-                { label: "Mécanique Classique", href: "/cours" },
-                { label: "Mécanique Quantique I", href: "/cours" },
-                { label: "LaTeX", href: "/cours" },
-              ],
-            },
-            {
-              title: "Platform",
-              links: [
-                { label: "Training Programmes", href: "/formations" },
-                { label: "Blog", href: "/blog" },
-                { label: "Community", href: "/communaute" },
-                { label: "Mentorship", href: "/mentorat" },
-                { label: "Applications", href: "/admissions" },
-              ],
-            },
-            {
-              title: "Resources",
-              links: [
-                { label: "About us", href: "/a-propos" },
-                { label: "Contact", href: "/contact" },
-                { label: "FAQ", href: "/contact" },
-                { label: "Terms of use", href: "/contact" },
-                { label: "Privacy", href: "/contact" },
-              ],
-            },
-          ].map((col) => (
+          {columns.map((col) => (
             <div key={col.title} className="space-y-3">
               <h3 className="text-sm font-semibold text-white">
                 {col.title}
@@ -72,10 +77,10 @@ export function SiteFooter() {
 
         <div className="mt-8 flex flex-col items-center justify-between gap-4 border-t border-white/10 pt-6 sm:flex-row">
           <p className="text-xs text-white/40">
-            © {new Date().getFullYear()} Numeria Institute. All rights reserved.
+            © {year} Numeria Institute. {t(locale, "footer.rights")}
           </p>
           <p className="text-xs text-white/40">
-            📍 Lomé, Togo · Built with ❤️ for African learners
+            📍 {t(locale, "footer.location")} · {t(locale, "footer.builtFor")}
           </p>
         </div>
       </div>

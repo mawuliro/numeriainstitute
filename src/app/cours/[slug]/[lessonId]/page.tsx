@@ -8,6 +8,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { Badge } from "@/components/ui/badge";
 import { LessonBlocksRenderer } from "@/components/lesson/lesson-blocks-renderer";
 import { Clock, ChevronLeft, ChevronRight } from "lucide-react";
+import { getLocale, t } from "@/lib/i18n";
 
 export default async function LessonPage({
   params,
@@ -15,6 +16,7 @@ export default async function LessonPage({
   params: Promise<{ slug: string; lessonId: string }>;
 }) {
   const { slug, lessonId } = await params;
+  const locale = await getLocale();
 
   const course = await db.course.findUnique({
     where: { slug },
@@ -79,7 +81,7 @@ export default async function LessonPage({
           {/* Breadcrumb */}
           <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
             <Link href="/cours" className="hover:text-foreground">
-              Catalogue
+              {t(locale, "course.catalog")}
             </Link>
             <span>/</span>
             <Link
@@ -96,7 +98,8 @@ export default async function LessonPage({
               {/* Lesson header */}
               <div className="mb-6 border-b pb-4">
                 <p className="mb-1 text-sm text-muted-foreground">
-                  Leçon {currentIdx + 1} sur {allLessons.length}
+                  {t(locale, "course.lesson")} {currentIdx + 1}{" "}
+                  {t(locale, "course.of")} {allLessons.length}
                 </p>
                 <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
                   {lesson.title}
@@ -104,11 +107,11 @@ export default async function LessonPage({
                 <div className="mt-2 flex items-center gap-3 text-sm text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <Clock className="h-3.5 w-3.5" />
-                    {lesson.estimatedMinutes} minutes
+                    {lesson.estimatedMinutes} {t(locale, "course.minutes")}
                   </span>
                   {lesson.isFreePreview && (
                     <Badge variant="outline" className="text-[#2DD4BF]">
-                      Aperçu gratuit
+                      {t(locale, "course.freePreview")}
                     </Badge>
                   )}
                 </div>
@@ -125,7 +128,7 @@ export default async function LessonPage({
                     className="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted"
                   >
                     <ChevronLeft className="h-4 w-4" />
-                    Précédent
+                    {t(locale, "course.previous")}
                   </Link>
                 ) : (
                   <div />
@@ -135,7 +138,7 @@ export default async function LessonPage({
                     href={`/cours/${course.slug}/${nextLesson.id}`}
                     className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
                   >
-                    Suivant
+                    {t(locale, "course.next")}
                     <ChevronRight className="h-4 w-4" />
                   </Link>
                 ) : (
@@ -148,13 +151,13 @@ export default async function LessonPage({
             <aside className="hidden lg:block">
               <div className="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto rounded-xl border bg-card p-4">
                 <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                  Leçons
+                  {t(locale, "course.lessonsLabel")}
                 </h3>
                 <div className="space-y-1">
                   {course.modules.map((module, modIdx) => (
                     <div key={module.id} className="mb-3">
                       <p className="mb-1 px-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                        Module {modIdx + 1}
+                        {t(locale, "course.module")} {modIdx + 1}
                       </p>
                       {module.lessons.map((l) => (
                         <Link

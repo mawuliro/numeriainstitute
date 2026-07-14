@@ -4,12 +4,13 @@ import { db } from "@/lib/db";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { Video, Calendar, Users, Plus } from "lucide-react";
+import { getLocale, t } from "@/lib/i18n";
 
 export default async function VisioconferencePage() {
+  const locale = await getLocale();
   const meetings = await db.meeting.findMany({
     where: { isActive: true },
     orderBy: { startTime: "asc" },
@@ -35,10 +36,10 @@ export default async function VisioconferencePage() {
           <div className="container mx-auto max-w-7xl px-4 text-center text-white">
             <Video className="mx-auto mb-4 h-12 w-12 text-[#2DD4BF]" />
             <h1 className="text-3xl font-bold tracking-tight md:text-4xl">
-              Visioconférence
+              {t(locale, "video.title")}
             </h1>
             <p className="mt-2 text-white/80">
-              Rejoins ou organise des réunions en ligne — comme Zoom
+              {t(locale, "video.subtitle")}
             </p>
           </div>
         </section>
@@ -50,7 +51,7 @@ export default async function VisioconferencePage() {
               <div>
                 <h2 className="mb-4 flex items-center gap-2 text-xl font-bold">
                   <span className="flex h-3 w-3 animate-pulse rounded-full bg-red-500" />
-                  En direct
+                  {t(locale, "video.live")}
                 </h2>
                 <div className="space-y-3">
                   {live.map((meeting) => (
@@ -62,12 +63,12 @@ export default async function VisioconferencePage() {
                         <div className="flex-1">
                           <h3 className="font-semibold">{meeting.title}</h3>
                           <p className="text-xs text-muted-foreground">
-                            Organisé par {meeting.host.name ?? meeting.host.email}
+                            {t(locale, "video.organisedBy")} {meeting.host.name ?? meeting.host.email}
                           </p>
                         </div>
                         <Link href={`/visioconference/${meeting.id}`}>
                           <Button className="bg-red-500 hover:bg-red-600">
-                            Rejoindre maintenant
+                            {t(locale, "video.joinNow")}
                           </Button>
                         </Link>
                       </CardContent>
@@ -82,12 +83,12 @@ export default async function VisioconferencePage() {
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="flex items-center gap-2 text-xl font-bold">
                   <Calendar className="h-5 w-5 text-[#2DD4BF]" />
-                  Réunions à venir
+                  {t(locale, "video.upcoming")}
                 </h2>
                 <Link href="/admin/visioconference/nouveau">
                   <Button size="sm" variant="outline">
                     <Plus className="h-4 w-4" />
-                    Planifier (Admin)
+                    {t(locale, "video.scheduleAdmin")}
                   </Button>
                 </Link>
               </div>
@@ -95,7 +96,7 @@ export default async function VisioconferencePage() {
               {upcoming.length === 0 ? (
                 <Card>
                   <CardContent className="p-8 text-center text-sm text-muted-foreground">
-                    Aucune réunion planifiée. Reviens bientôt !
+                    {t(locale, "video.noMeetings")}
                   </CardContent>
                 </Card>
               ) : (
@@ -117,14 +118,14 @@ export default async function VisioconferencePage() {
                             </span>
                             <span className="flex items-center gap-1">
                               <Users className="h-3 w-3" />
-                              {meeting._count.participants} inscrits
+                              {meeting._count.participants} {t(locale, "video.registered")}
                             </span>
-                            <span>par {meeting.host.name ?? meeting.host.email}</span>
+                            <span>{t(locale, "video.by")} {meeting.host.name ?? meeting.host.email}</span>
                           </div>
                         </div>
                         <Link href={`/visioconference/${meeting.id}`}>
                           <Button variant="outline" size="sm">
-                            Rejoindre
+                            {t(locale, "video.join")}
                           </Button>
                         </Link>
                       </CardContent>

@@ -9,12 +9,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { BookOpen, Clock, TrendingUp, Award } from "lucide-react";
+import { getLocale, t } from "@/lib/i18n";
 
 export default async function DashboardPage() {
   const session = await auth();
   if (!session?.user) {
     redirect("/login");
   }
+
+  const locale = await getLocale();
 
   const user = await db.user.findUnique({
     where: { id: session.user.id },
@@ -48,10 +51,10 @@ export default async function DashboardPage() {
       <main className="flex-1 pb-16 lg:pb-0">
         <div className="container mx-auto max-w-7xl px-4 py-8">
           <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
-            Bonjour, {user.name ?? user.email.split("@")[0]} 👋
+            {t(locale, "dashboard.welcome")}, {user.name ?? user.email.split("@")[0]} 👋
           </h1>
           <p className="mt-1 text-muted-foreground">
-            Continue ton apprentissage là où tu l&apos;as laissé.
+            {t(locale, "dashboard.continueLearning")}
           </p>
 
           {/* Stats */}
@@ -64,7 +67,7 @@ export default async function DashboardPage() {
                 <div>
                   <div className="text-2xl font-bold">{totalEnrollments}</div>
                   <div className="text-xs text-muted-foreground">
-                    Cours inscrits
+                    {t(locale, "dashboard.enrolledCourses")}
                   </div>
                 </div>
               </CardContent>
@@ -79,7 +82,7 @@ export default async function DashboardPage() {
                     {completedLessons.length}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    Leçons terminées
+                    {t(locale, "dashboard.completedLessons")}
                   </div>
                 </div>
               </CardContent>
@@ -92,7 +95,7 @@ export default async function DashboardPage() {
                 <div>
                   <div className="text-2xl font-bold">0h</div>
                   <div className="text-xs text-muted-foreground">
-                    Temps d&apos;apprentissage
+                    {t(locale, "dashboard.learningTime")}
                   </div>
                 </div>
               </CardContent>
@@ -105,7 +108,7 @@ export default async function DashboardPage() {
                 <div>
                   <div className="text-2xl font-bold">0</div>
                   <div className="text-xs text-muted-foreground">
-                    Certificats
+                    {t(locale, "dashboard.certificates")}
                   </div>
                 </div>
               </CardContent>
@@ -114,18 +117,20 @@ export default async function DashboardPage() {
 
           {/* Enrolled courses */}
           <div className="mt-8">
-            <h2 className="mb-4 text-lg font-semibold">Mes cours</h2>
+            <h2 className="mb-4 text-lg font-semibold">
+              {t(locale, "dashboard.myCourses")}
+            </h2>
             {user.enrollments.length === 0 ? (
               <Card>
                 <CardContent className="p-8 text-center">
                   <p className="text-muted-foreground">
-                    Tu n&apos;es inscrit à aucun cours pour le moment.
+                    {t(locale, "dashboard.noCourses")}
                   </p>
                   <Link
                     href="/cours"
                     className="mt-4 inline-flex items-center rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
                   >
-                    Explorer le catalogue
+                    {t(locale, "dashboard.exploreCatalog")}
                   </Link>
                 </CardContent>
               </Card>
@@ -165,7 +170,8 @@ export default async function DashboardPage() {
                             />
                           </div>
                           <p className="mt-2 text-xs text-muted-foreground">
-                            {completedInCourse} / {totalLessons} leçons terminées
+                            {completedInCourse} / {totalLessons}{" "}
+                            {t(locale, "dashboard.lessonsCompleted")}
                           </p>
                         </CardContent>
                       </Card>

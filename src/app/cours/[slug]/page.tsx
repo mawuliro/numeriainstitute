@@ -8,6 +8,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Clock, BookOpen, Users, ArrowRight } from "lucide-react";
+import { getLocale, t } from "@/lib/i18n";
 
 export default async function CourseDetailPage({
   params,
@@ -15,6 +16,7 @@ export default async function CourseDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
+  const locale = await getLocale();
   const course = await getCourseForCatalog(slug);
 
   if (!course) {
@@ -41,7 +43,7 @@ export default async function CourseDetailPage({
               href="/cours"
               className="mb-6 inline-flex items-center gap-1 text-sm text-white/60 transition-colors hover:text-white"
             >
-              ← Catalogue
+              ← {t(locale, "course.catalog")}
             </Link>
 
             <div className="grid gap-6 sm:gap-8 lg:grid-cols-3">
@@ -59,15 +61,15 @@ export default async function CourseDetailPage({
                 <div className="mt-6 flex flex-wrap gap-6 text-sm text-white/60">
                   <div className="flex items-center gap-2">
                     <BookOpen className="h-4 w-4 text-[#2DD4BF]" />
-                    <span>{totalLessons} leçons</span>
+                    <span>{totalLessons} {t(locale, "course.lessons")}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Clock className="h-4 w-4 text-[#2DD4BF]" />
-                    <span>{course.estimatedHours} heures</span>
+                    <span>{course.estimatedHours} {t(locale, "course.hours")}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Users className="h-4 w-4 text-[#2DD4BF]" />
-                    <span>{course._count.enrollments} inscrits</span>
+                    <span>{course._count.enrollments} {t(locale, "course.enrolled")}</span>
                   </div>
                 </div>
 
@@ -77,13 +79,13 @@ export default async function CourseDetailPage({
                       href={`/cours/${course.slug}/${course.modules[0].lessons[0].id}`}
                       className="inline-flex items-center gap-2 rounded-xl bg-[#2DD4BF] px-6 py-3 text-sm font-semibold text-[#1B2A4E] shadow-lg shadow-[#2DD4BF]/25 transition-transform hover:scale-105"
                     >
-                      Commencer le cours
+                      {t(locale, "course.startCourse")}
                       <ArrowRight className="h-4 w-4" />
                     </Link>
                   )}
                   <div className="inline-flex items-center rounded-xl border border-white/20 bg-white/5 px-6 py-3 text-sm font-semibold text-white backdrop-blur-sm">
                     {course.isFree
-                      ? "Gratuit"
+                      ? t(locale, "home.free")
                       : `${(course.price / 100).toFixed(2)} €`}
                   </div>
                 </div>
@@ -93,7 +95,7 @@ export default async function CourseDetailPage({
                 <Card className="border-white/10 bg-white/5 backdrop-blur-md">
                   <CardContent className="p-6">
                     <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-white/60">
-                      Description
+                      {t(locale, "course.description")}
                     </h2>
                     <p className="text-sm text-white/80">
                       {course.description}
@@ -108,7 +110,9 @@ export default async function CourseDetailPage({
         {/* Course content */}
         <section className="py-12">
           <div className="container mx-auto max-w-7xl px-4">
-            <h2 className="mb-6 text-2xl font-bold">Contenu du cours</h2>
+            <h2 className="mb-6 text-2xl font-bold">
+              {t(locale, "course.courseContent")}
+            </h2>
             <div className="space-y-4">
               {course.modules.map((module, modIdx) => (
                 <div key={module.id}>
@@ -133,11 +137,11 @@ export default async function CourseDetailPage({
                         </span>
                         <span className="flex items-center gap-1 text-xs text-muted-foreground">
                           <Clock className="h-3 w-3" />
-                          {lesson.estimatedMinutes} min
+                          {lesson.estimatedMinutes} {t(locale, "course.minutes")}
                         </span>
                         {lesson.isFreePreview && (
                           <Badge variant="outline" className="text-[#2DD4BF]">
-                            Gratuit
+                            {t(locale, "home.free")}
                           </Badge>
                         )}
                       </Link>

@@ -3,17 +3,19 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BookOpen, Home, MessageSquare, Video, LayoutGrid } from "lucide-react";
+import { useLocale, t } from "@/lib/i18n-client";
 
 const MOBILE_NAV = [
-  { href: "/", label: "Home", icon: Home },
-  { href: "/cours", label: "Courses", icon: BookOpen },
-  { href: "/visioconference", label: "Video", icon: Video },
-  { href: "/communaute", label: "Forum", icon: MessageSquare },
-  { href: "/dashboard", label: "Dashboard", icon: LayoutGrid },
+  { href: "/", labelKey: "mobile.home", icon: Home },
+  { href: "/cours", labelKey: "mobile.courses", icon: BookOpen },
+  { href: "/visioconference", labelKey: "mobile.video", icon: Video },
+  { href: "/communaute", labelKey: "mobile.forum", icon: MessageSquare },
+  { href: "/dashboard", labelKey: "mobile.dashboard", icon: LayoutGrid },
 ];
 
 export function MobileNav() {
   const pathname = usePathname();
+  const locale = useLocale();
 
   // Don't show on admin pages
   if (pathname?.startsWith("/admin")) return null;
@@ -34,7 +36,9 @@ export function MobileNav() {
             }`}
           >
             <item.icon className={`h-5 w-5 ${isActive ? "fill-[#2DD4BF]/10" : ""}`} />
-            <span className="text-[10px] font-medium">{item.label}</span>
+            <span className="text-[10px] font-medium">
+              {t(locale, item.labelKey)}
+            </span>
           </Link>
         );
       })}

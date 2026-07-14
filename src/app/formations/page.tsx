@@ -3,8 +3,28 @@ import { SiteFooter } from "@/components/site-footer";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Briefcase, Calendar, Users } from "lucide-react";
+import { getLocale, t } from "@/lib/i18n";
 
-export default function FormationsPage() {
+export default async function FormationsPage() {
+  const locale = await getLocale();
+
+  const programmes = [
+    {
+      title: "Python for Data Science",
+      duration: "12 weeks",
+      students: "Cohort of 20",
+      desc: "Master Python, NumPy, Pandas, and machine learning fundamentals. Includes real-world projects with African datasets.",
+      level: "Intermediate",
+    },
+    {
+      title: "Scientific Computing with Fortran",
+      duration: "8 weeks",
+      students: "Cohort of 15",
+      desc: "Learn Fortran for high-performance scientific computing. Numerical methods, parallel programming, and HPC.",
+      level: "Advanced",
+    },
+  ];
+
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
@@ -13,14 +33,13 @@ export default function FormationsPage() {
           <div className="container mx-auto max-w-7xl px-4">
             <Badge variant="secondary" className="mb-3">
               <Briefcase className="mr-1 h-3 w-3" />
-              Training Programmes
+              {t(locale, "formations.title")}
             </Badge>
             <h1 className="text-3xl font-bold tracking-tight md:text-4xl">
-              Training Programmes
+              {t(locale, "formations.title")}
             </h1>
             <p className="mt-2 text-muted-foreground">
-              Intensive, cohort-based training programmes with live sessions,
-              projects, and certificates.
+              {t(locale, "formations.subtitle")}
             </p>
           </div>
         </section>
@@ -28,22 +47,7 @@ export default function FormationsPage() {
         <section className="py-12">
           <div className="container mx-auto max-w-7xl px-4">
             <div className="grid gap-6 md:grid-cols-2">
-              {[
-                {
-                  title: "Python for Data Science",
-                  duration: "12 weeks",
-                  students: "Cohort of 20",
-                  desc: "Master Python, NumPy, Pandas, and machine learning fundamentals. Includes real-world projects with African datasets.",
-                  level: "Intermediate",
-                },
-                {
-                  title: "Scientific Computing with Fortran",
-                  duration: "8 weeks",
-                  students: "Cohort of 15",
-                  desc: "Learn Fortran for high-performance scientific computing. Numerical methods, parallel programming, and HPC.",
-                  level: "Advanced",
-                },
-              ].map((prog) => (
+              {programmes.map((prog) => (
                 <Card key={prog.title}>
                   <CardContent className="p-6">
                     <div className="mb-3 flex items-center justify-between">
@@ -68,8 +72,7 @@ export default function FormationsPage() {
 
             <div className="mt-8 rounded-2xl border border-dashed p-8 text-center">
               <p className="text-muted-foreground">
-                New cohorts open regularly. Create an account to be notified
-                when enrolment opens!
+                {t(locale, "formations.newCohorts")}
               </p>
             </div>
           </div>

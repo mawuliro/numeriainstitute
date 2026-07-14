@@ -7,6 +7,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Atom, Calculator, Code2, FileText, Users, Clock } from "lucide-react";
+import { getLocale, t } from "@/lib/i18n";
 
 const CATEGORY_ICONS: Record<string, typeof Atom> = {
   physique: Atom,
@@ -16,6 +17,7 @@ const CATEGORY_ICONS: Record<string, typeof Atom> = {
 };
 
 export default async function CataloguePage() {
+  const locale = await getLocale();
   const courses = await db.course.findMany({
     where: { status: "PUBLISHED" },
     orderBy: { createdAt: "asc" },
@@ -33,14 +35,14 @@ export default async function CataloguePage() {
         <section className="border-b bg-muted/30">
           <div className="container mx-auto max-w-7xl px-4 py-12">
             <Badge variant="secondary" className="mb-3">
-              Catalogue
+              {t(locale, "course.catalog")}
             </Badge>
             <h1 className="text-3xl font-bold tracking-tight md:text-4xl">
-              Tous les cours
+              {t(locale, "course.allCourses")}
             </h1>
             <p className="mt-2 text-muted-foreground">
-              {courses.length} cours disponibles · Accès gratuit à tous les
-              cours
+              {courses.length} {t(locale, "course.coursesAvailable")} ·{" "}
+              {t(locale, "course.freeAccess")}
             </p>
           </div>
         </section>
@@ -51,7 +53,7 @@ export default async function CataloguePage() {
             {courses.length === 0 ? (
               <div className="rounded-2xl border border-dashed p-12 text-center">
                 <p className="text-muted-foreground">
-                  Aucun cours publié pour le moment. Reviens bientôt !
+                  {t(locale, "course.noCourses")}
                 </p>
               </div>
             ) : (
@@ -94,7 +96,7 @@ export default async function CataloguePage() {
                               {course.estimatedHours}h
                             </Badge>
                             <Badge variant="secondary">
-                              {totalLessons} leçons
+                              {totalLessons} {t(locale, "course.lessons")}
                             </Badge>
                             <Badge variant="secondary">
                               <Users className="mr-1 h-3 w-3" />
@@ -105,8 +107,8 @@ export default async function CataloguePage() {
                           <div className="mt-auto pt-6">
                             <span className="text-sm font-semibold text-primary transition-colors group-hover:text-primary/80">
                               {course.isFree
-                                ? "Accéder gratuitement →"
-                                : `Accéder · ${(course.price / 100).toFixed(2)} €`}
+                                ? t(locale, "course.accessFree")
+                                : `${t(locale, "course.accessPaid")} · ${(course.price / 100).toFixed(2)} €`}
                             </span>
                           </div>
                         </CardContent>

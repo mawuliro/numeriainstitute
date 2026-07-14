@@ -13,8 +13,24 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { MapPin, Mail, Phone, Clock } from "lucide-react";
+import { getLocale, t } from "@/lib/i18n";
 
-export default function ContactPage() {
+export default async function ContactPage() {
+  const locale = await getLocale();
+
+  const contactItems = [
+    { icon: MapPin, label: t(locale, "contact.address"), value: t(locale, "contact.addressValue") },
+    { icon: Mail, label: t(locale, "contact.email"), value: "numeriainstitude@gmail.com" },
+    { icon: Phone, label: t(locale, "contact.phone"), value: "+228 XX XX XX XX" },
+    { icon: Clock, label: t(locale, "contact.hours"), value: t(locale, "contact.hoursValue") },
+  ];
+
+  const faqs = [
+    { q: t(locale, "contact.faq1q"), a: t(locale, "contact.faq1a") },
+    { q: t(locale, "contact.faq2q"), a: t(locale, "contact.faq2a") },
+    { q: t(locale, "contact.faq3q"), a: t(locale, "contact.faq3a") },
+  ];
+
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
@@ -23,11 +39,10 @@ export default function ContactPage() {
           <div className="container mx-auto max-w-7xl px-4">
             <div className="mx-auto mb-12 max-w-2xl text-center">
               <h1 className="text-3xl font-bold tracking-tight md:text-4xl">
-                Contact us
+                {t(locale, "contact.title")}
               </h1>
               <p className="mt-3 text-muted-foreground">
-                A question, a partnership idea, or simply want to know more? We
-                are here for you.
+                {t(locale, "contact.subtitle")}
               </p>
             </div>
 
@@ -35,52 +50,54 @@ export default function ContactPage() {
               {/* Contact form */}
               <Card>
                 <CardContent className="p-6">
-                  <h2 className="mb-4 text-lg font-semibold">Send a message</h2>
+                  <h2 className="mb-4 text-lg font-semibold">
+                    {t(locale, "contact.sendMessage")}
+                  </h2>
                   <form className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="name">FULL NAME *</Label>
-                      <Input id="name" name="name" placeholder="Your full name" required />
+                      <Label htmlFor="name">{t(locale, "contact.fullName")}</Label>
+                      <Input id="name" name="name" placeholder={t(locale, "contact.fullName")} required />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="email">EMAIL *</Label>
+                      <Label htmlFor="email">{t(locale, "contact.email")}</Label>
                       <Input id="email" name="email" type="email" placeholder="you@example.com" required />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="org">ORGANISATION (optionnel)</Label>
-                      <Input id="org" name="org" placeholder="University, company, NGO..." />
+                      <Label htmlFor="org">{t(locale, "contact.organisation")}</Label>
+                      <Input id="org" name="org" placeholder={t(locale, "contact.organisation")} />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="topic">TOPIC *</Label>
+                      <Label htmlFor="topic">{t(locale, "contact.topic")}</Label>
                       <Select name="topic">
                         <SelectTrigger>
-                          <SelectValue placeholder="— Choose a subject —" />
+                          <SelectValue placeholder={t(locale, "contact.chooseTopic")} />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="info">Information request</SelectItem>
-                          <SelectItem value="enrollment">Programme enrollment</SelectItem>
-                          <SelectItem value="partnership">Partnership proposal</SelectItem>
-                          <SelectItem value="press">Press / media contact</SelectItem>
-                          <SelectItem value="technical">Technical issue</SelectItem>
-                          <SelectItem value="other">Other</SelectItem>
+                          <SelectItem value="info">{t(locale, "contact.info")}</SelectItem>
+                          <SelectItem value="enrollment">{t(locale, "contact.enrollment")}</SelectItem>
+                          <SelectItem value="partnership">{t(locale, "contact.partnership")}</SelectItem>
+                          <SelectItem value="press">{t(locale, "contact.press")}</SelectItem>
+                          <SelectItem value="technical">{t(locale, "contact.technical")}</SelectItem>
+                          <SelectItem value="other">{t(locale, "contact.other")}</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="message">MESSAGE *</Label>
+                      <Label htmlFor="message">{t(locale, "contact.message")}</Label>
                       <Textarea
                         id="message"
                         name="message"
                         rows={5}
-                        placeholder="Your message..."
+                        placeholder={t(locale, "contact.message")}
                         required
                       />
                     </div>
                     <Button type="submit" className="w-full bg-[#1B2A4E] hover:bg-[#1B2A4E]/90">
-                      Send message 📨
+                      {t(locale, "contact.send")}
                     </Button>
                   </form>
                   <p className="mt-4 text-center text-xs text-muted-foreground">
-                    We respond within 24 to 48 business hours.
+                    {t(locale, "contact.responseTime")}
                   </p>
                 </CardContent>
               </Card>
@@ -90,15 +107,10 @@ export default function ContactPage() {
                 <Card>
                   <CardContent className="p-6">
                     <h2 className="mb-4 text-lg font-semibold">
-                      Our contact details
+                      {t(locale, "contact.contactDetails")}
                     </h2>
                     <div className="space-y-4">
-                      {[
-                        { icon: MapPin, label: "Adresse", value: "Lomé, Togo" },
-                        { icon: Mail, label: "Email", value: "numeriainstitude@gmail.com" },
-                        { icon: Phone, label: "Phone", value: "+228 XX XX XX XX" },
-                        { icon: Clock, label: "Hours", value: "Mon-Fri: 9am-6pm (Lomé time, GMT+0)" },
-                      ].map((item) => (
+                      {contactItems.map((item) => (
                         <div key={item.label} className="flex items-start gap-3">
                           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
                             <item.icon className="h-5 w-5" />
@@ -119,23 +131,10 @@ export default function ContactPage() {
                 <Card>
                   <CardContent className="p-6">
                     <h2 className="mb-4 text-lg font-semibold">
-                      Frequently asked questions
+                      {t(locale, "contact.faq")}
                     </h2>
                     <div className="space-y-4">
-                      {[
-                        {
-                          q: "Are online courses free?",
-                          a: "Yes, the majority of online courses are free. Some advanced courses are paid.",
-                        },
-                        {
-                          q: "How do I apply for in-person programmes?",
-                          a: "Applications are made online. Create an account and follow the application process.",
-                        },
-                        {
-                          q: "Do you offer scholarships?",
-                          a: "Yes, scholarships are available for deserving candidates. Contact us for more information.",
-                        },
-                      ].map((faq) => (
+                      {faqs.map((faq) => (
                         <div key={faq.q}>
                           <p className="text-sm font-semibold">{faq.q}</p>
                           <p className="mt-1 text-sm text-muted-foreground">

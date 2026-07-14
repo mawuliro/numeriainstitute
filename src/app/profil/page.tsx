@@ -8,10 +8,13 @@ import { SiteFooter } from "@/components/site-footer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Mail, Calendar, Award, BookOpen } from "lucide-react";
+import { getLocale, t } from "@/lib/i18n";
 
 export default async function ProfilePage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
+
+  const locale = await getLocale();
 
   const user = await db.user.findUnique({
     where: { id: session.user.id },
@@ -27,7 +30,9 @@ export default async function ProfilePage() {
       <SiteHeader />
       <main className="flex-1 pb-16 lg:pb-0">
         <div className="container mx-auto max-w-4xl px-4 py-8">
-          <h1 className="text-2xl font-bold tracking-tight md:text-3xl">My Profile</h1>
+          <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
+            {t(locale, "profile.title")}
+          </h1>
 
           <div className="mt-6 grid gap-6 md:grid-cols-3">
             {/* Left: avatar + info */}
@@ -36,7 +41,9 @@ export default async function ProfilePage() {
                 <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-primary text-2xl font-bold text-primary-foreground">
                   {(user.name ?? user.email)[0].toUpperCase()}
                 </div>
-                <h2 className="mt-3 text-lg font-semibold">{user.name ?? "Student"}</h2>
+                <h2 className="mt-3 text-lg font-semibold">
+                  {user.name ?? t(locale, "profile.student")}
+                </h2>
                 <p className="text-sm text-muted-foreground">{user.email}</p>
                 <Badge variant="secondary" className="mt-2">{user.role}</Badge>
               </CardContent>
@@ -45,20 +52,30 @@ export default async function ProfilePage() {
             {/* Right: details */}
             <div className="space-y-4 md:col-span-2">
               <Card>
-                <CardHeader><CardTitle className="text-base">Account info</CardTitle></CardHeader>
+                <CardHeader>
+                  <CardTitle className="text-base">
+                    {t(locale, "profile.accountInfo")}
+                  </CardTitle>
+                </CardHeader>
                 <CardContent className="space-y-3 text-sm">
                   <div className="flex items-center gap-2"><Mail className="h-4 w-4 text-muted-foreground" /> {user.email}</div>
-                  <div className="flex items-center gap-2"><Calendar className="h-4 w-4 text-muted-foreground" /> Joined {new Date(user.createdAt).toLocaleDateString()}</div>
-                  <div className="flex items-center gap-2"><BookOpen className="h-4 w-4 text-muted-foreground" /> {user.enrollments.length} courses enrolled</div>
-                  <div className="flex items-center gap-2"><Award className="h-4 w-4 text-muted-foreground" /> {user.lessonProgress.filter(p => p.isCompleted).length} lessons completed</div>
+                  <div className="flex items-center gap-2"><Calendar className="h-4 w-4 text-muted-foreground" /> {t(locale, "profile.joined")} {new Date(user.createdAt).toLocaleDateString()}</div>
+                  <div className="flex items-center gap-2"><BookOpen className="h-4 w-4 text-muted-foreground" /> {user.enrollments.length} {t(locale, "profile.coursesEnrolled")}</div>
+                  <div className="flex items-center gap-2"><Award className="h-4 w-4 text-muted-foreground" /> {user.lessonProgress.filter(p => p.isCompleted).length} {t(locale, "profile.lessonsCompleted")}</div>
                 </CardContent>
               </Card>
 
               <Card>
-                <CardHeader><CardTitle className="text-base">Enrolled courses</CardTitle></CardHeader>
+                <CardHeader>
+                  <CardTitle className="text-base">
+                    {t(locale, "profile.enrolledCourses")}
+                  </CardTitle>
+                </CardHeader>
                 <CardContent>
                   {user.enrollments.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No courses yet.</p>
+                    <p className="text-sm text-muted-foreground">
+                      {t(locale, "profile.noCourses")}
+                    </p>
                   ) : (
                     <div className="space-y-2">
                       {user.enrollments.map(({ course }) => (

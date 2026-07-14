@@ -2,10 +2,21 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { FileText, CheckCircle2, Clock } from "lucide-react";
+import { FileText } from "lucide-react";
 import Link from "next/link";
+import { getLocale, t } from "@/lib/i18n";
 
-export default function AdmissionsPage() {
+export default async function AdmissionsPage() {
+  const locale = await getLocale();
+
+  const steps = [
+    { step: 1, title: t(locale, "admissions.step1"), desc: t(locale, "admissions.step1Desc") },
+    { step: 2, title: t(locale, "admissions.step2"), desc: t(locale, "admissions.step2Desc") },
+    { step: 3, title: t(locale, "admissions.step3"), desc: t(locale, "admissions.step3Desc") },
+    { step: 4, title: t(locale, "admissions.step4"), desc: t(locale, "admissions.step4Desc") },
+    { step: 5, title: t(locale, "admissions.step5"), desc: t(locale, "admissions.step5Desc") },
+  ];
+
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
@@ -14,28 +25,24 @@ export default function AdmissionsPage() {
           <div className="container mx-auto max-w-7xl px-4">
             <Badge variant="secondary" className="mb-3">
               <FileText className="mr-1 h-3 w-3" />
-              Applications
+              {t(locale, "nav.applications")}
             </Badge>
             <h1 className="text-3xl font-bold tracking-tight md:text-4xl">
-              Admissions
+              {t(locale, "admissions.title")}
             </h1>
             <p className="mt-2 text-muted-foreground">
-              Apply for our in-person and hybrid training programmes.
+              {t(locale, "admissions.subtitle")}
             </p>
           </div>
         </section>
 
         <section className="py-12">
           <div className="container mx-auto max-w-4xl px-4">
-            <h2 className="mb-6 text-xl font-semibold">Application process</h2>
+            <h2 className="mb-6 text-xl font-semibold">
+              {t(locale, "admissions.process")}
+            </h2>
             <div className="space-y-4">
-              {[
-                { step: 1, title: "Create an account", desc: "Sign up for free on Numeria Institute." },
-                { step: 2, title: "Choose a programme", desc: "Browse available programmes and select the one that fits you." },
-                { step: 3, title: "Submit your application", desc: "Fill out the application form with your background and motivation." },
-                { step: 4, title: "Interview", desc: "Selected candidates will be invited for a short interview." },
-                { step: 5, title: "Enrolment", desc: "Upon acceptance, complete enrolment and start your journey!" },
-              ].map((s) => (
+              {steps.map((s) => (
                 <Card key={s.step}>
                   <CardContent className="flex items-start gap-4 p-4">
                     <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10 font-bold text-primary">
@@ -55,7 +62,7 @@ export default function AdmissionsPage() {
                 href="/signup"
                 className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
               >
-                Start your application
+                {t(locale, "admissions.startApplication")}
               </Link>
             </div>
           </div>

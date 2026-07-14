@@ -7,8 +7,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { Newspaper, ArrowRight, Calendar } from "lucide-react";
+import { getLocale, t } from "@/lib/i18n";
 
 export default async function BlogPage() {
+  const locale = await getLocale();
   const posts = await db.blogPost.findMany({
     where: { isPublished: true },
     orderBy: { publishedAt: "desc" },
@@ -25,13 +27,13 @@ export default async function BlogPage() {
           <div className="container mx-auto max-w-7xl px-4">
             <Badge variant="secondary" className="mb-3">
               <Newspaper className="mr-1 h-3 w-3" />
-              Blog
+              {t(locale, "nav.blog")}
             </Badge>
             <h1 className="text-3xl font-bold tracking-tight md:text-4xl">
-              Numeria Blog
+              {t(locale, "blog.title")}
             </h1>
             <p className="mt-2 text-muted-foreground">
-              News, tutorials, and insights from the Numeria community.
+              {t(locale, "blog.subtitle")}
             </p>
           </div>
         </section>
@@ -41,7 +43,7 @@ export default async function BlogPage() {
             {posts.length === 0 ? (
               <div className="rounded-2xl border border-dashed p-12 text-center">
                 <p className="text-muted-foreground">
-                  Aucun article publié pour le moment. Reviens bientôt !
+                  {t(locale, "blog.noPosts")}
                 </p>
               </div>
             ) : (
@@ -56,7 +58,7 @@ export default async function BlogPage() {
                             <Calendar className="h-3 w-3" />
                             {post.publishedAt
                               ? new Date(post.publishedAt).toLocaleDateString("fr-FR")
-                              : "Brouillon"}
+                              : t(locale, "blog.draft")}
                           </span>
                         </div>
                         <h2 className="text-lg font-bold group-hover:text-primary">
