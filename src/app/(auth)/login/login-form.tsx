@@ -103,6 +103,12 @@ export function LoginForm({ locale }: { locale: Locale }) {
                 </div>
               </div>
 
+              <div className="flex justify-end">
+                <Link href="/mot-de-passe-oublie" className="text-xs text-[#2DD4BF] hover:underline">
+                  {t(locale, "auth.forgotPassword")}
+                </Link>
+              </div>
+
               <Button
                 type="submit"
                 disabled={pending}
