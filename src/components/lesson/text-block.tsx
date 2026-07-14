@@ -60,7 +60,8 @@ export function TextBlock({ content }: { content: string }) {
  * Handles: headings, bold, italic, code, lists, blockquotes, callouts.
  */
 function markdownToHtml(md: string): string {
-  let html = md;
+  // Convert literal \n to actual newlines (DB stores them as literal \n)
+  let html = md.replace(/\\n/g, "\n");
 
   // Protect fenced code blocks
   const codeBlocks: string[] = [];

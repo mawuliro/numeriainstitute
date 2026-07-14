@@ -89,6 +89,7 @@ export function LabBlock({ lab }: { lab: InteractiveLab }) {
       const py = await loadPyodide();
 
       const paramsJson = JSON.stringify(sliderValues);
+      const cleanCode = lab.simulationCode.replace(/\\n/g, "\n");
       const wrappedCode = `
 import matplotlib
 matplotlib.use('Agg')
@@ -96,7 +97,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import json, io, base64
 
-${lab.simulationCode}
+${cleanCode}
 
 params = json.loads('${paramsJson}')
 fig = simulate(params)

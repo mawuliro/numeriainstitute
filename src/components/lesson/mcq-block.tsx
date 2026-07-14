@@ -89,7 +89,7 @@ export function McqBlock({ exercise }: { exercise: MCQExercise }) {
       <CardContent className="pt-4">
         <div
           className="prose prose-sm max-w-none mb-4"
-          dangerouslySetInnerHTML={{ __html: renderSimpleMarkdown(exercise.question) }}
+          dangerouslySetInnerHTML={{ __html: renderSimpleMarkdown(exercise.question.replace(/\\n/g, "\n")) }}
         />
 
         <div className="space-y-2">

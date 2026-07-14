@@ -51,6 +51,7 @@ export function SandboxBlock({ title, code }: { title: string; code: string }) {
       });
 
       // Run the code — savefig('plot.png') is intercepted to produce imageData
+      const cleanCode = code.replace(/\\n/g, "\n");
       const wrappedCode = `
 import matplotlib
 matplotlib.use('Agg')
@@ -58,7 +59,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import io, base64
 
-${code}
+${cleanCode}
 
 # Check if a figure was created and save it
 buf = io.BytesIO()
@@ -126,9 +127,9 @@ plt.close('all')
       </div>
 
       {/* Code editor */}
-      <div className="bg-gray-900 p-4">
-        <pre className="overflow-x-auto text-sm text-gray-100 font-mono leading-relaxed">
-          <code>{code}</code>
+      <div className="bg-gray-900 p-4 overflow-x-auto">
+        <pre className="text-sm text-gray-100 font-mono leading-relaxed">
+          <code>{code.replace(/\\n/g, "\n")}</code>
         </pre>
       </div>
 
