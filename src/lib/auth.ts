@@ -1,15 +1,12 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
-import { PrismaAdapter } from "@auth/prisma-adapter";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
-  adapter: PrismaAdapter(db),
   session: { strategy: "jwt" },
   pages: {
     signIn: "/login",
-    signUp: "/signup",
   },
   providers: [
     Credentials({
@@ -67,7 +64,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     },
     async session({ session, token }) {
       if (session.user && token.id) {
-        session.user.id = token.id as string;
+        (session.user as Record<string, unknown>).id = token.id as string;
 
         // Fetch role from DB
         const dbUser = await db.user.findUnique({
