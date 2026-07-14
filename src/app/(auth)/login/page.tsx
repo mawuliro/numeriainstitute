@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { getLocale, type Locale } from "@/lib/i18n";
 import { LoginForm } from "./login-form";
 
