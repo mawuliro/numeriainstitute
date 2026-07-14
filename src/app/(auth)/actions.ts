@@ -168,7 +168,11 @@ export async function loginAction(formData: FormData) {
       password,
       redirectTo: "/dashboard",
     });
-  } catch {
+  } catch (error) {
+    // NextAuth v5 throws NEXT_REDIRECT on successful redirect — re-throw it
+    if (error instanceof Error && error.message === "NEXT_REDIRECT") {
+      throw error;
+    }
     return { error: "Erreur de connexion. Réessaie." };
   }
 }
