@@ -6,6 +6,7 @@ import { NumeriaLogoFull } from "@/components/numeria-logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationBell } from "@/components/notification-bell";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { SearchBar } from "@/components/search-bar";
 import { Button } from "@/components/ui/button";
 import { MobileMenu } from "@/components/mobile-menu";
 
@@ -57,7 +58,7 @@ export async function SiteHeader() {
           </nav>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5"><SearchBar />
           <LanguageSwitcher currentLocale={locale} />
           <ThemeToggle />
 

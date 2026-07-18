@@ -35,6 +35,14 @@ export const metadata: Metadata = {
   authors: [{ name: "Numeria Institute" }],
   icons: {
     icon: "/favicon.ico",
+    apple: "/favicon.ico",
+  },
+  manifest: "/manifest.json",
+  applicationName: "Numeria Institute",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Numeria Institute",
   },
   openGraph: {
     title: "Numeria Institute",
