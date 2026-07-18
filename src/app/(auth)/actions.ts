@@ -20,10 +20,22 @@ const VERIFY_TOKEN_EXPIRY_HOURS = 24;
 export async function signupAction(formData: FormData) {
   const email = (formData.get("email") as string)?.toLowerCase().trim();
   const password = formData.get("password") as string;
+  const confirmPassword = formData.get("confirmPassword") as string;
   const name = (formData.get("name") as string)?.trim();
+  const agreed = formData.get("agreed");
 
   if (!email || !password) {
     return { error: "Email et mot de passe requis" };
+  }
+
+  // Check terms agreement
+  if (!agreed) {
+    return { error: "Tu dois accepter les conditions d'utilisation pour t'inscrire." };
+  }
+
+  // Check password confirmation
+  if (password !== confirmPassword) {
+    return { error: "Les mots de passe ne correspondent pas." };
   }
 
   // Validate password strength
@@ -48,7 +60,7 @@ export async function signupAction(formData: FormData) {
   const tokenExpiry = new Date(Date.now() + VERIFY_TOKEN_EXPIRY_HOURS * 60 * 60 * 1000);
 
   // Create user (not verified yet)
-  await db.user.create({
+  const user = await db.user.create({
     data: {
       email,
       name,
@@ -60,11 +72,20 @@ export async function signupAction(formData: FormData) {
     },
   });
 
+  // Create welcome notification
+  await db.notification.create({
+    data: {
+      userId: user.id,
+      title: "Bienvenue sur Numeria Institute ! 🎉",
+      message: `Bonjour ${name ?? ""} ! Ton compte a été créé. Vérifie ton email pour l'activer, puis explore nos cours gratuits.`,
+      link: "/cours",
+    },
+  });
+
   // Send verification email
   const emailSent = await sendVerificationEmail(email, name, token, BASE_URL);
 
   // Redirect to "check your email" page
-  // Pass emailSent status so we can show the link directly if email failed
   const params = new URLSearchParams({ email });
   if (!emailSent) {
     params.set("failed", "true");
