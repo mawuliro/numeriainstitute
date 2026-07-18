@@ -3,11 +3,13 @@ export const dynamic = "force-dynamic";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/lib/db";
+import { auth } from "@/lib/auth";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { Badge } from "@/components/ui/badge";
 import { LessonBlocksRenderer } from "@/components/lesson/lesson-blocks-renderer";
-import { Clock, ChevronLeft, ChevronRight } from "lucide-react";
+import { LessonCompleteButton } from "./lesson-complete-button";
+import { Clock, ChevronLeft, ChevronRight, CheckCircle2 } from "lucide-react";
 import { getLocale, t } from "@/lib/i18n";
 
 export default async function LessonPage({
@@ -53,6 +55,27 @@ export default async function LessonPage({
   const prevLesson = currentIdx > 0 ? allLessons[currentIdx - 1] : null;
   const nextLesson =
     currentIdx < allLessons.length - 1 ? allLessons[currentIdx + 1] : null;
+
+  // Check if user is logged in and has progress
+  const session = await auth();
+  let userProgress: { isCompleted: boolean } | null = null;
+  let completedLessonIds: Set<string> = new Set();
+
+  if (session?.user) {
+    const progress = await db.lessonProgress.findMany({
+      where: {
+        userId: session.user.id,
+        lessonId: { in: allLessons.map((l) => l.id) },
+      },
+      select: { lessonId: true, isCompleted: true },
+    });
+    completedLessonIds = new Set(
+      progress.filter((p) => p.isCompleted).map((p) => p.lessonId)
+    );
+    userProgress = progress.find((p) => p.lessonId === lessonId)
+      ? { isCompleted: progress.find((p) => p.lessonId === lessonId)!.isCompleted }
+      : null;
+  }
 
   // Fetch full lesson with blocks
   const lesson = await db.courseLesson.findUnique({
@@ -121,29 +144,59 @@ export default async function LessonPage({
               <LessonBlocksRenderer blocks={lesson.blocks} />
 
               {/* Navigation */}
-              <div className="mt-8 flex items-center justify-between border-t pt-6">
-                {prevLesson ? (
-                  <Link
-                    href={`/cours/${course.slug}/${prevLesson.id}`}
-                    className="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                    {t(locale, "course.previous")}
-                  </Link>
-                ) : (
-                  <div />
+              <div className="mt-8 space-y-4 border-t pt-6">
+                {/* Progress bar */}
+                {session?.user && (
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+                        <span>Progression du cours</span>
+                        <span>{completedLessonIds.size}/{allLessons.length}</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-muted overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-[#2DD4BF] transition-all duration-500"
+                          style={{ width: `${allLessons.length > 0 ? (completedLessonIds.size / allLessons.length) * 100 : 0}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
                 )}
-                {nextLesson ? (
-                  <Link
-                    href={`/cours/${course.slug}/${nextLesson.id}`}
-                    className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
-                  >
-                    {t(locale, "course.next")}
-                    <ChevronRight className="h-4 w-4" />
-                  </Link>
-                ) : (
-                  <div />
-                )}
+
+                {/* Complete button + navigation */}
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  {prevLesson ? (
+                    <Link
+                      href={`/cours/${course.slug}/${prevLesson.id}`}
+                      className="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      {t(locale, "course.previous")}
+                    </Link>
+                  ) : (
+                    <div />
+                  )}
+
+                  {session?.user && (
+                    <LessonCompleteButton
+                      lessonId={lesson.id}
+                      courseId={course.id}
+                      isCompleted={userProgress?.isCompleted ?? false}
+                    />
+                  )}
+
+                  {nextLesson ? (
+                    <Link
+                      href={`/cours/${course.slug}/${nextLesson.id}`}
+                      className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+                    >
+                      {t(locale, "course.next")}
+                      <ChevronRight className="h-4 w-4" />
+                    </Link>
+                  ) : (
+                    <div />
+                  )}
+                </div>
               </div>
             </div>
 
@@ -163,13 +216,16 @@ export default async function LessonPage({
                         <Link
                           key={l.id}
                           href={`/cours/${course.slug}/${l.id}`}
-                          className={`block rounded-lg px-3 py-2 text-sm transition-colors ${
+                          className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
                             l.id === lessonId
                               ? "bg-primary text-primary-foreground"
                               : "hover:bg-muted"
                           }`}
                         >
-                          {l.title}
+                          {completedLessonIds.has(l.id) && (
+                            <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-green-500" />
+                          )}
+                          <span className="truncate">{l.title}</span>
                         </Link>
                       ))}
                     </div>
