@@ -4,12 +4,11 @@ import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { authConfig } from "@/auth.config";
 
-// Fail fast at boot if AUTH_SECRET is missing in production.
-if (process.env.NODE_ENV === "production" && !process.env.AUTH_SECRET) {
-  throw new Error(
-    "AUTH_SECRET environment variable is required in production. Generate one with `openssl rand -base64 32`.",
-  );
-}
+// Note: AUTH_SECRET is validated by NextAuth itself at runtime when signing
+// JWTs. We intentionally do NOT throw here at module-evaluation time because
+// `next build` runs in NODE_ENV=production and would fail the build before
+// Vercel injects the env var. NextAuth will throw a clear error at sign-in
+// time if AUTH_SECRET is missing.
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,

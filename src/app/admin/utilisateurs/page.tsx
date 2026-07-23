@@ -7,12 +7,34 @@ import { updateUserRoleAction, deleteUserAction, verifyUserAction } from "./acti
 import { DeleteUserButton } from "./delete-user-button";
 
 export default async function AdminUsersPage() {
-  const users = await db.user.findMany({
-    where: { deletedAt: null },
-    orderBy: { createdAt: "desc" },
-    include: { _count: { select: { enrollments: true, lessonProgress: true, badges: true } } },
-    take: 100,
-  });
+  let users: Array<{
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+    name: string | null;
+    email: string;
+    avatarUrl: string | null;
+    role: "STUDENT" | "MENTOR" | "STAFF" | "ADMIN";
+    isVerified: boolean;
+    _count: { enrollments: number; lessonProgress: number; badges: number };
+  }> = [];
+
+  try {
+    users = await db.user.findMany({
+      where: { deletedAt: null },
+      orderBy: { createdAt: "desc" },
+      include: {
+        _count: { select: { enrollments: true, lessonProgress: true, badges: true } },
+      },
+      take: 100,
+    });
+  } catch (err) {
+    console.error("[admin/utilisateurs] DB error:", err);
+    // Surface a clear error to the user
+    throw new Error(
+      `Impossible de charger les utilisateurs: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 
   return (
     <div className="space-y-6">
