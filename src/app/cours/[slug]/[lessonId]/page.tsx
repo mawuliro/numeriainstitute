@@ -8,9 +8,6 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { Badge } from "@/components/ui/badge";
 import { LessonBlocksRenderer } from "@/components/lesson/lesson-blocks-renderer";
-                  {session?.user && (
-                    <FavoriteButton lessonId={lesson.id} courseId={course.id} isFavorited={false} />
-                  )}
 import { LessonCompleteButton } from "./lesson-complete-button";
 import { FavoriteButton } from "./favorite-button";
 import { Clock, ChevronLeft, ChevronRight, CheckCircle2 } from "lucide-react";
