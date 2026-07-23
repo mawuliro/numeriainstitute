@@ -30,13 +30,19 @@ export default async function AdminUsersPage() {
             </tr></thead>
             <tbody>
               {users.map((user) => {
-                const initial = (user.name ?? user.email ?? "?")[0]?.toUpperCase() ?? "?";
+                const displayName = [user.firstName, user.lastName].filter(Boolean).join(" ") || user.name || user.email;
+                const initial = (displayName[0] ?? "?").toUpperCase();
                 return (
                   <tr key={user.id} className="border-b hover:bg-muted/30">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{initial}</div>
-                        <div><p className="font-medium">{user.name ?? "Sans nom"}</p><p className="text-xs text-muted-foreground">{user.email}</p></div>
+                        {user.avatarUrl ? (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img src={user.avatarUrl} alt={displayName} className="h-8 w-8 rounded-full object-cover" />
+                        ) : (
+                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{initial}</div>
+                        )}
+                        <div><p className="font-medium">{displayName}</p><p className="text-xs text-muted-foreground">{user.email}</p></div>
                       </div>
                     </td>
                     <td className="px-4 py-3">

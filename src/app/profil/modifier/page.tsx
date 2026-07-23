@@ -24,7 +24,7 @@ export default async function ProfileEditPage({
 
   const user = await db.user.findUnique({
     where: { id: session.user.id },
-    select: { id: true, name: true, email: true, bio: true, avatarUrl: true, preferredLanguage: true },
+    select: { id: true, firstName: true, lastName: true, email: true, bio: true, avatarUrl: true, preferredLanguage: true },
   });
   if (!user) redirect("/login");
 
@@ -47,9 +47,11 @@ export default async function ProfileEditPage({
               <CardContent>
                 <ProfileForm
                   action={updateProfileAction}
-                  initialName={user.name ?? ""}
+                  initialFirstName={user.firstName ?? ""}
+                  initialLastName={user.lastName ?? ""}
                   initialBio={user.bio ?? ""}
                   initialLanguage={user.preferredLanguage}
+                  initialAvatarUrl={user.avatarUrl}
                   locale={locale}
                   error={sp.profileError}
                   success={sp.profileSuccess}

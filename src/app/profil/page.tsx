@@ -10,6 +10,13 @@ import { Mail, Calendar, Award, BookOpen, Flame, Star, Trophy, Link as LinkIcon 
 import { BADGES } from "@/lib/gamification";
 import Link from "next/link";
 
+const ROLE_LABELS: Record<string, string> = {
+  STUDENT: "Étudiant",
+  MENTOR: "Mentor",
+  STAFF: "Staff",
+  ADMIN: "Administrateur",
+};
+
 export default async function ProfilePage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
@@ -26,6 +33,9 @@ export default async function ProfilePage() {
   });
   if (!user) redirect("/login");
 
+  const displayName = [user.firstName, user.lastName].filter(Boolean).join(" ") || user.name || "Étudiant";
+  const initial = (displayName[0] ?? "?").toUpperCase();
+
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
@@ -37,10 +47,21 @@ export default async function ProfilePage() {
             {/* Avatar + info */}
             <Card className="md:col-span-1">
               <CardContent className="p-6 text-center">
-                <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-primary text-2xl font-bold text-primary-foreground">{(user.name ?? user.email)[0].toUpperCase()}</div>
-                <h2 className="mt-3 text-lg font-semibold">{user.name ?? "Student"}</h2>
+                {user.avatarUrl ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={user.avatarUrl}
+                    alt={displayName}
+                    className="mx-auto h-20 w-20 rounded-full object-cover ring-2 ring-[#2DD4BF]/40"
+                  />
+                ) : (
+                  <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-primary text-2xl font-bold text-primary-foreground">
+                    {initial}
+                  </div>
+                )}
+                <h2 className="mt-3 text-lg font-semibold">{displayName}</h2>
                 <p className="text-sm text-muted-foreground">{user.email}</p>
-                <Badge variant="secondary" className="mt-2">{user.role}</Badge>
+                <Badge variant="secondary" className="mt-2">{ROLE_LABELS[user.role] ?? user.role}</Badge>
                 {user.streak && user.streak.currentStreak > 0 && (
                   <div className="mt-3 flex items-center justify-center gap-1 text-sm font-semibold text-orange-500"><Flame className="h-4 w-4" />{user.streak.currentStreak} jours de streak</div>
                 )}

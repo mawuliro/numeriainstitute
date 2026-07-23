@@ -21,7 +21,13 @@ export default async function DashboardPage() {
 
   const user = await db.user.findUnique({
     where: { id: session.user.id },
-    include: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      name: true,
+      email: true,
+      avatarUrl: true,
       enrollments: {
         include: {
           course: {
@@ -44,18 +50,31 @@ export default async function DashboardPage() {
 
   const completedLessons = user.lessonProgress.filter((p) => p.isCompleted);
   const totalEnrollments = user.enrollments.length;
+  const displayName = [user.firstName, user.lastName].filter(Boolean).join(" ") || user.name || user.email.split("@")[0];
 
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
       <main className="flex-1 pb-16 lg:pb-0">
         <div className="container mx-auto max-w-7xl px-4 py-8">
-          <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
-            {t(locale, "dashboard.welcome")}, {user.name ?? user.email.split("@")[0]} 👋
-          </h1>
-          <p className="mt-1 text-muted-foreground">
-            {t(locale, "dashboard.continueLearning")}
-          </p>
+          <div className="flex items-center gap-4">
+            {user.avatarUrl ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={user.avatarUrl} alt={displayName} className="h-14 w-14 rounded-full object-cover ring-2 ring-[#2DD4BF]/40" />
+            ) : (
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary text-xl font-bold text-primary-foreground">
+                {(displayName[0] ?? "?").toUpperCase()}
+              </div>
+            )}
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
+                {t(locale, "dashboard.welcome")}, {displayName} 👋
+              </h1>
+              <p className="mt-1 text-muted-foreground">
+                {t(locale, "dashboard.continueLearning")}
+              </p>
+            </div>
+          </div>
 
           {/* Stats */}
           <div className="mt-4 grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-4">

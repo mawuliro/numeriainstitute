@@ -22,11 +22,33 @@ export async function signupAction(formData: FormData) {
   const email = (formData.get("email") as string)?.toLowerCase().trim();
   const password = formData.get("password") as string;
   const confirmPassword = formData.get("confirmPassword") as string;
-  const name = (formData.get("name") as string)?.trim();
+  const firstName = (formData.get("firstName") as string)?.trim();
+  const lastName = (formData.get("lastName") as string)?.trim();
+  const avatarUrl = (formData.get("avatarUrl") as string)?.trim() || null;
   const agreed = formData.get("agreed");
 
   if (!email || !password) {
     return { error: "Email et mot de passe requis" };
+  }
+
+  // First and last name are now required
+  if (!firstName || firstName.length < 1) {
+    return { error: "Ton prénom est requis." };
+  }
+  if (!lastName || lastName.length < 1) {
+    return { error: "Ton nom est requis." };
+  }
+  if (firstName.length > 60 || lastName.length > 60) {
+    return { error: "Le prénom et le nom ne peuvent pas dépasser 60 caractères." };
+  }
+
+  // Validate avatar URL if provided (must be a data: URL from our upload endpoint)
+  if (avatarUrl && !avatarUrl.startsWith("data:image/")) {
+    return { error: "Photo de profil invalide." };
+  }
+  // Cap avatar size at 200 KB in DB (already resized by the upload endpoint)
+  if (avatarUrl && avatarUrl.length > 200 * 1024) {
+    return { error: "La photo de profil est trop lourde (max 200 Ko après compression)." };
   }
 
   // Check terms agreement
@@ -47,6 +69,8 @@ export async function signupAction(formData: FormData) {
     };
   }
 
+  const fullName = `${firstName} ${lastName}`.trim();
+
   // M43: don't reveal if email is already registered. Send the verification
   // email silently and redirect to the "check your email" page either way.
   const existing = await db.user.findUnique({ where: { email } });
@@ -58,7 +82,10 @@ export async function signupAction(formData: FormData) {
     const user = await db.user.create({
       data: {
         email,
-        name,
+        firstName,
+        lastName,
+        name: fullName,
+        avatarUrl,
         passwordHash,
         role: "STUDENT",
         isVerified: false,
@@ -71,12 +98,12 @@ export async function signupAction(formData: FormData) {
       data: {
         userId: user.id,
         title: "Bienvenue sur Numeria Institute ! 🎉",
-        message: `Bonjour ${name ?? ""} ! Ton compte a été créé. Vérifie ton email pour l'activer, puis explore nos cours gratuits.`,
+        message: `Bonjour ${firstName} ! Ton compte a été créé. Vérifie ton email pour l'activer, puis explore nos cours gratuits.`,
         link: "/cours",
       },
     });
 
-    const emailSent = await sendVerificationEmail(email, name, token, BASE_URL);
+    const emailSent = await sendVerificationEmail(email, fullName, token, BASE_URL);
     const params = new URLSearchParams({ email });
     if (!emailSent) {
       params.set("failed", "true");
