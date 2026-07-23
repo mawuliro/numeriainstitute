@@ -3,19 +3,10 @@ export const dynamic = "force-dynamic";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { MapPin, Mail, Phone, Clock } from "lucide-react";
 import { getLocale, t } from "@/lib/i18n";
+import { contactAction } from "./actions";
+import { ContactForm } from "./contact-form";
 
 export default async function ContactPage() {
   const locale = await getLocale();
@@ -32,6 +23,24 @@ export default async function ContactPage() {
     { q: t(locale, "contact.faq2q"), a: t(locale, "contact.faq2a") },
     { q: t(locale, "contact.faq3q"), a: t(locale, "contact.faq3a") },
   ];
+
+  const formLabels = {
+    sendMessage: t(locale, "contact.sendMessage"),
+    fullName: t(locale, "contact.fullName"),
+    email: t(locale, "contact.email"),
+    organisation: t(locale, "contact.organisation"),
+    topic: t(locale, "contact.topic"),
+    chooseTopic: t(locale, "contact.chooseTopic"),
+    info: t(locale, "contact.info"),
+    enrollment: t(locale, "contact.enrollment"),
+    partnership: t(locale, "contact.partnership"),
+    press: t(locale, "contact.press"),
+    technical: t(locale, "contact.technical"),
+    other: t(locale, "contact.other"),
+    message: t(locale, "contact.message"),
+    send: t(locale, "contact.send"),
+    responseTime: t(locale, "contact.responseTime"),
+  };
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -50,59 +59,7 @@ export default async function ContactPage() {
 
             <div className="grid gap-6 sm:gap-8 lg:grid-cols-2">
               {/* Contact form */}
-              <Card>
-                <CardContent className="p-6">
-                  <h2 className="mb-4 text-lg font-semibold">
-                    {t(locale, "contact.sendMessage")}
-                  </h2>
-                  <form className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="name">{t(locale, "contact.fullName")}</Label>
-                      <Input id="name" name="name" placeholder={t(locale, "contact.fullName")} required />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="email">{t(locale, "contact.email")}</Label>
-                      <Input id="email" name="email" type="email" placeholder="you@example.com" required />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="org">{t(locale, "contact.organisation")}</Label>
-                      <Input id="org" name="org" placeholder={t(locale, "contact.organisation")} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="topic">{t(locale, "contact.topic")}</Label>
-                      <Select name="topic">
-                        <SelectTrigger>
-                          <SelectValue placeholder={t(locale, "contact.chooseTopic")} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="info">{t(locale, "contact.info")}</SelectItem>
-                          <SelectItem value="enrollment">{t(locale, "contact.enrollment")}</SelectItem>
-                          <SelectItem value="partnership">{t(locale, "contact.partnership")}</SelectItem>
-                          <SelectItem value="press">{t(locale, "contact.press")}</SelectItem>
-                          <SelectItem value="technical">{t(locale, "contact.technical")}</SelectItem>
-                          <SelectItem value="other">{t(locale, "contact.other")}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="message">{t(locale, "contact.message")}</Label>
-                      <Textarea
-                        id="message"
-                        name="message"
-                        rows={5}
-                        placeholder={t(locale, "contact.message")}
-                        required
-                      />
-                    </div>
-                    <Button type="submit" className="w-full bg-[#1B2A4E] hover:bg-[#1B2A4E]/90">
-                      {t(locale, "contact.send")}
-                    </Button>
-                  </form>
-                  <p className="mt-4 text-center text-xs text-muted-foreground">
-                    {t(locale, "contact.responseTime")}
-                  </p>
-                </CardContent>
-              </Card>
+              <ContactForm action={contactAction} locale={locale} labels={formLabels} />
 
               {/* Contact info + FAQ */}
               <div className="space-y-6">
@@ -156,3 +113,4 @@ export default async function ContactPage() {
     </div>
   );
 }
+

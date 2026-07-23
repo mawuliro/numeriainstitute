@@ -2,12 +2,18 @@
 
 import { db } from "@/lib/db";
 import { redirect } from "next/navigation";
+import { requireAdmin } from "@/lib/security";
 
 export async function createModuleAction(formData: FormData) {
+  await requireAdmin();
   const courseId = formData.get("courseId") as string;
-  const title = formData.get("title") as string;
+  const title = (formData.get("title") as string)?.trim();
 
-  const maxOrder = await db.courseModule.max({
+  if (!courseId || !title) {
+    redirect(`/admin/cours/${courseId}/lecons?error=missing`);
+  }
+
+  const maxOrder = await db.courseModule.aggregate({
     where: { courseId },
     _max: { order: true },
   });
@@ -25,39 +31,53 @@ export async function createModuleAction(formData: FormData) {
 }
 
 export async function createLessonAction(formData: FormData) {
+  await requireAdmin();
   const courseId = formData.get("courseId") as string;
   const moduleId = formData.get("moduleId") as string;
-  const title = formData.get("title") as string;
-  const slug = formData.get("slug") as string;
+  const title = (formData.get("title") as string)?.trim();
+  const slug = (formData.get("slug") as string)?.trim();
   const minutes = parseInt(formData.get("minutes") as string) || 30;
 
-  const maxOrder = await db.courseLesson.max({
+  if (!courseId || !moduleId || !title || !slug) {
+    redirect(`/admin/cours/${courseId}/lecons?error=missing`);
+  }
+
+  const maxOrder = await db.courseLesson.aggregate({
     where: { moduleId },
     _max: { order: true },
   });
 
-  await db.courseLesson.create({
-    data: {
-      courseId,
-      moduleId,
-      title,
-      slug,
-      order: (maxOrder._max.order ?? -1) + 1,
-      estimatedMinutes: minutes,
-      isFreePreview: true,
-      isActive: true,
-    },
-  });
+  try {
+    await db.courseLesson.create({
+      data: {
+        courseId,
+        moduleId,
+        title,
+        slug,
+        order: (maxOrder._max.order ?? -1) + 1,
+        estimatedMinutes: minutes,
+        isFreePreview: true,
+        isActive: true,
+      },
+    });
+  } catch {
+    redirect(`/admin/cours/${courseId}/lecons?error=slug-taken`);
+  }
 
   redirect(`/admin/cours/${courseId}/lecons`);
 }
 
 export async function addTextBlockAction(formData: FormData) {
+  await requireAdmin();
   const lessonId = formData.get("lessonId") as string;
   const courseId = formData.get("courseId") as string;
   const content = formData.get("content") as string;
 
-  const maxOrder = await db.lessonBlock.max({
+  if (!lessonId || !content) {
+    redirect(`/admin/cours/${courseId}/lecons/${lessonId || ""}?error=missing`);
+  }
+
+  const maxOrder = await db.lessonBlock.aggregate({
     where: { lessonId },
     _max: { order: true },
   });
@@ -75,12 +95,17 @@ export async function addTextBlockAction(formData: FormData) {
 }
 
 export async function addSandboxBlockAction(formData: FormData) {
+  await requireAdmin();
   const lessonId = formData.get("lessonId") as string;
   const courseId = formData.get("courseId") as string;
-  const title = formData.get("title") as string;
+  const title = (formData.get("title") as string)?.trim() ?? "Sandbox";
   const code = formData.get("code") as string;
 
-  const maxOrder = await db.lessonBlock.max({
+  if (!lessonId) {
+    redirect(`/admin/cours/${courseId}/lecons?error=missing`);
+  }
+
+  const maxOrder = await db.lessonBlock.aggregate({
     where: { lessonId },
     _max: { order: true },
   });
@@ -99,22 +124,31 @@ export async function addSandboxBlockAction(formData: FormData) {
 }
 
 export async function addMcqBlockAction(formData: FormData) {
+  await requireAdmin();
   const lessonId = formData.get("lessonId") as string;
   const courseId = formData.get("courseId") as string;
-  const title = formData.get("title") as string;
+  const title = (formData.get("title") as string)?.trim();
   const question = formData.get("question") as string;
-  const explanation = formData.get("explanation") as string;
+  const explanation = (formData.get("explanation") as string)?.trim() ?? "";
+
+  if (!lessonId || !title || !question) {
+    redirect(`/admin/cours/${courseId}/lecons/${lessonId}?error=missing`);
+  }
 
   // Parse choices
   const choicesRaw = formData.get("choices") as string;
-  const lines = choicesRaw.split("\n").filter((l) => l.trim());
+  const lines = (choicesRaw ?? "").split("\n").filter((l) => l.trim());
+  if (lines.length < 2) {
+    redirect(`/admin/cours/${courseId}/lecons/${lessonId}?error=choices`);
+  }
+
   const choices = lines.map((line, i) => {
     const isCorrect = line.startsWith("*");
     const text = isCorrect ? line.slice(1).trim() : line.trim();
     return { text, isCorrect, feedback: "", order: i };
   });
 
-  const maxBlockOrder = await db.lessonBlock.max({
+  const maxBlockOrder = await db.lessonBlock.aggregate({
     where: { lessonId },
     _max: { order: true },
   });
@@ -147,9 +181,14 @@ export async function addMcqBlockAction(formData: FormData) {
 }
 
 export async function deleteBlockAction(formData: FormData) {
+  await requireAdmin();
   const blockId = formData.get("blockId") as string;
   const lessonId = formData.get("lessonId") as string;
   const courseId = formData.get("courseId") as string;
+
+  if (!blockId) {
+    redirect(`/admin/cours/${courseId}/lecons/${lessonId || ""}?error=missing`);
+  }
 
   await db.lessonBlock.delete({ where: { id: blockId } });
 

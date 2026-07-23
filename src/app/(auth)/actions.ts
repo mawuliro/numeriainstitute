@@ -10,6 +10,7 @@ import {
   recordFailedAttempt,
   clearAttempts,
   generateToken,
+  hashToken,
 } from "@/lib/security";
 import { sendVerificationEmail } from "@/lib/email";
 
@@ -46,51 +47,46 @@ export async function signupAction(formData: FormData) {
     };
   }
 
-  // Check if user already exists
+  // M43: don't reveal if email is already registered. Send the verification
+  // email silently and redirect to the "check your email" page either way.
   const existing = await db.user.findUnique({ where: { email } });
-  if (existing) {
-    return { error: "Un compte existe déjà avec cet email" };
+  if (!existing) {
+    const passwordHash = await bcrypt.hash(password, 12);
+    const token = generateToken();
+    const tokenExpiry = new Date(Date.now() + VERIFY_TOKEN_EXPIRY_HOURS * 60 * 60 * 1000);
+
+    const user = await db.user.create({
+      data: {
+        email,
+        name,
+        passwordHash,
+        role: "STUDENT",
+        isVerified: false,
+        emailVerifyToken: hashToken(token),
+        emailVerifyExpires: tokenExpiry,
+      },
+    });
+
+    await db.notification.create({
+      data: {
+        userId: user.id,
+        title: "Bienvenue sur Numeria Institute ! 🎉",
+        message: `Bonjour ${name ?? ""} ! Ton compte a été créé. Vérifie ton email pour l'activer, puis explore nos cours gratuits.`,
+        link: "/cours",
+      },
+    });
+
+    const emailSent = await sendVerificationEmail(email, name, token, BASE_URL);
+    const params = new URLSearchParams({ email });
+    if (!emailSent) {
+      params.set("failed", "true");
+      params.set("token", token);
+    }
+    redirect(`/verifier-email-sent?${params.toString()}`);
   }
 
-  // Hash password
-  const passwordHash = await bcrypt.hash(password, 12);
-
-  // Generate email verification token
-  const token = generateToken();
-  const tokenExpiry = new Date(Date.now() + VERIFY_TOKEN_EXPIRY_HOURS * 60 * 60 * 1000);
-
-  // Create user (not verified yet)
-  const user = await db.user.create({
-    data: {
-      email,
-      name,
-      passwordHash,
-      role: "STUDENT",
-      isVerified: false,
-      emailVerifyToken: token,
-      emailVerifyExpires: tokenExpiry,
-    },
-  });
-
-  // Create welcome notification
-  await db.notification.create({
-    data: {
-      userId: user.id,
-      title: "Bienvenue sur Numeria Institute ! 🎉",
-      message: `Bonjour ${name ?? ""} ! Ton compte a été créé. Vérifie ton email pour l'activer, puis explore nos cours gratuits.`,
-      link: "/cours",
-    },
-  });
-
-  // Send verification email
-  const emailSent = await sendVerificationEmail(email, name, token, BASE_URL);
-
-  // Redirect to "check your email" page
+  // Account already exists — silently redirect (no info disclosure)
   const params = new URLSearchParams({ email });
-  if (!emailSent) {
-    params.set("failed", "true");
-    params.set("token", token);
-  }
   redirect(`/verifier-email-sent?${params.toString()}`);
 }
 
@@ -115,7 +111,7 @@ export async function loginAction(formData: FormData) {
   // Find user
   const user = await db.user.findUnique({ where: { email } });
 
-  if (!user || !user.passwordHash) {
+  if (!user || !user.passwordHash || user.deletedAt) {
     const result = recordFailedAttempt(`login:${email}`);
     return {
       error: `Email ou mot de passe incorrect. ${result.remaining} tentative(s) restante(s).`,
@@ -140,7 +136,7 @@ export async function loginAction(formData: FormData) {
     // Update DB with failed attempts
     const newCount = user.failedLoginAttempts + 1;
     const lockUntil =
-      newCount >= 5 ? new Date(Date.now() + 30 * 60 * 1000) : null; // 30 min lockout
+      newCount >= 5 ? new Date(Date.now() + 30 * 60 * 1000) : null;
 
     await db.user.update({
       where: { id: user.id },
@@ -216,14 +212,14 @@ export async function resendVerificationAction(formData: FormData) {
     return { success: "Ton email est déjà vérifié. Tu peux te connecter." };
   }
 
-  // Generate new token
+  // Generate new token (stored hashed)
   const token = generateToken();
   const tokenExpiry = new Date(Date.now() + VERIFY_TOKEN_EXPIRY_HOURS * 60 * 60 * 1000);
 
   await db.user.update({
     where: { id: user.id },
     data: {
-      emailVerifyToken: token,
+      emailVerifyToken: hashToken(token),
       emailVerifyExpires: tokenExpiry,
     },
   });
@@ -233,7 +229,7 @@ export async function resendVerificationAction(formData: FormData) {
   return { success: "Email de vérification renvoyé ! Vérifie ta boîte mail." };
 }
 
-// ── Verify email with token ──
+// ── Verify email with token (compare hashed) ──
 export async function verifyEmailAction(formData: FormData) {
   const token = formData.get("token") as string;
 
@@ -241,9 +237,11 @@ export async function verifyEmailAction(formData: FormData) {
     return { error: "Token de vérification manquant." };
   }
 
+  const hashed = hashToken(token);
+
   const user = await db.user.findFirst({
     where: {
-      emailVerifyToken: token,
+      emailVerifyToken: hashed,
       emailVerifyExpires: { gt: new Date() },
     },
   });

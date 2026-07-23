@@ -7,6 +7,10 @@ import { useEffect, useRef } from "react";
  * Uses a lightweight approach: we load MathJax on the client to render
  * $...$ and $$...$$ LaTeX. Markdown is parsed with a simple regex-based
  * converter (headings, bold, italic, code, lists, blockquotes).
+ *
+ * SECURITY: all text outside protected code/latex blocks is HTML-escaped
+ * before markdown rules are applied, which prevents XSS via `<script>`,
+ * `<img onerror=...>`, etc.
  */
 
 export function TextBlock({ content }: { content: string }) {
@@ -16,7 +20,6 @@ export function TextBlock({ content }: { content: string }) {
   useEffect(() => {
     if (!ref.current) return;
 
-    // Ensure MathJax is loaded
     if (!window.MathJax) {
       window.MathJax = {
         tex: {
@@ -56,39 +59,46 @@ export function TextBlock({ content }: { content: string }) {
 }
 
 /**
- * Simple Markdown to HTML converter.
- * Handles: headings, bold, italic, code, lists, blockquotes, callouts.
+ * Simple Markdown to HTML converter with XSS protection.
+ * Approach: HTML-escape the ENTIRE input first, then apply markdown rules.
+ * Code blocks and LaTeX blocks are also escaped (so `<script>` in code is shown
+ * as text, never executed).
  */
 function markdownToHtml(md: string): string {
-  // Convert literal \n to actual newlines (DB stores them as literal \n)
-  let html = md.replace(/\\n/g, "\n");
+  // Normalize line endings (handles Windows \r\n)
+  let html = md.replace(/\r\n/g, "\n").replace(/\\n/g, "\n");
 
-  // Protect fenced code blocks
+  // Escape all HTML first — this is the critical XSS defense.
+  html = escapeHtml(html);
+
+  // Protect fenced code blocks (```lang\ncode```)
   const codeBlocks: string[] = [];
-  html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+  html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (_m, _lang, code) => {
     const idx = codeBlocks.length;
+    // `code` is already escaped above (so `<` became `&lt;`). We render it as-is
+    // inside <pre><code>. No double-escape needed.
     codeBlocks.push(
-      `<pre class="bg-gray-900 text-gray-100 rounded-lg p-4 overflow-x-auto text-sm font-mono"><code>${escapeHtml(code.trim())}</code></pre>`,
+      `<pre class="bg-gray-900 text-gray-100 rounded-lg p-4 overflow-x-auto text-sm font-mono"><code>${code.trim()}</code></pre>`,
     );
     return `\u0000CODE${idx}\u0000`;
   });
 
   // Protect inline code
   const inlineCodes: string[] = [];
-  html = html.replace(/`([^`\n]+)`/g, (_, code) => {
+  html = html.replace(/`([^`\n]+)`/g, (_m, code) => {
     const idx = inlineCodes.length;
-    inlineCodes.push(`<code class="bg-muted px-1.5 py-0.5 rounded text-sm font-mono">${escapeHtml(code)}</code>`);
+    inlineCodes.push(`<code class="bg-muted px-1.5 py-0.5 rounded text-sm font-mono">${code}</code>`);
     return `\u0000INLINE${idx}\u0000`;
   });
 
-  // Protect LaTeX ($$...$$ and $...$)
+  // Protect LaTeX ($$...$$ and $...$) — restored verbatim for MathJax
   const latexBlocks: string[] = [];
-  html = html.replace(/\$\$([\s\S]*?)\$\$/g, (_, tex) => {
+  html = html.replace(/\$\$([\s\S]*?)\$\$/g, (_m, tex) => {
     const idx = latexBlocks.length;
     latexBlocks.push(`$$${tex}$$`);
     return `\u0000LATEX${idx}\u0000`;
   });
-  html = html.replace(/(?<!\$)\$(?!\$)([^\n$]+?)\$/g, (_, tex) => {
+  html = html.replace(/(?<!\$)\$(?!\$)([^\n$]+?)\$/g, (_m, tex) => {
     const idx = latexBlocks.length;
     latexBlocks.push(`$${tex}$`);
     return `\u0000LATEX${idx}\u0000`;
@@ -107,7 +117,7 @@ function markdownToHtml(md: string): string {
   html = html.replace(/(?<!\*)\*([^*\n]+?)\*(?!\*)/g, "<em>$1</em>");
 
   // Blockquotes (callouts)
-  html = html.replace(/^> (.+)$/gm, "<blockquote>$1</blockquote>");
+  html = html.replace(/^&gt; (.+)$/gm, "<blockquote>$1</blockquote>");
   html = html.replace(/<\/blockquote>\n<blockquote>/g, "\n");
 
   // Lists (unordered)
@@ -149,5 +159,7 @@ function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }

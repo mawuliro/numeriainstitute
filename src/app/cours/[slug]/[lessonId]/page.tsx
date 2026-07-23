@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { LessonBlocksRenderer } from "@/components/lesson/lesson-blocks-renderer";
 import { LessonCompleteButton } from "./lesson-complete-button";
 import { FavoriteButton } from "./favorite-button";
+import { Lock, LogIn } from "lucide-react";
 import { Clock, ChevronLeft, ChevronRight, CheckCircle2 } from "lucide-react";
 import { getLocale, t } from "@/lib/i18n";
 
@@ -61,21 +62,35 @@ export default async function LessonPage({
   const session = await auth();
   let userProgress: { isCompleted: boolean } | null = null;
   let completedLessonIds: Set<string> = new Set();
+  let isFavorited = false;
+  let isEnrolled = false;
 
   if (session?.user) {
-    const progress = await db.lessonProgress.findMany({
-      where: {
-        userId: session.user.id,
-        lessonId: { in: allLessons.map((l) => l.id) },
-      },
-      select: { lessonId: true, isCompleted: true },
-    });
+    const [progress, favorite, enrollment] = await Promise.all([
+      db.lessonProgress.findMany({
+        where: {
+          userId: session.user.id,
+          lessonId: { in: allLessons.map((l) => l.id) },
+        },
+        select: { lessonId: true, isCompleted: true },
+      }),
+      db.favorite.findUnique({
+        where: { userId_lessonId: { userId: session.user.id, lessonId } },
+        select: { id: true },
+      }),
+      db.enrollment.findUnique({
+        where: { userId_courseId: { userId: session.user.id, courseId: course.id } },
+        select: { id: true },
+      }),
+    ]);
     completedLessonIds = new Set(
       progress.filter((p) => p.isCompleted).map((p) => p.lessonId)
     );
     userProgress = progress.find((p) => p.lessonId === lessonId)
       ? { isCompleted: progress.find((p) => p.lessonId === lessonId)!.isCompleted }
       : null;
+    isFavorited = !!favorite;
+    isEnrolled = !!enrollment;
   }
 
   // Fetch full lesson with blocks
@@ -96,6 +111,65 @@ export default async function LessonPage({
   });
 
   if (!lesson) notFound();
+
+  // C4: Paid-content gating — block access if course is paid, lesson is not
+  // a free preview, and user is not enrolled (or not logged in)
+  const isPaidContent = !course.isFree && !lesson.isFreePreview;
+  const canAccess = !isPaidContent || isEnrolled;
+
+  if (!canAccess) {
+    return (
+      <div className="flex min-h-screen flex-col">
+        <SiteHeader />
+        <main className="flex-1 pb-16 lg:pb-0">
+          <div className="container mx-auto max-w-3xl px-4 py-12">
+            <div className="rounded-2xl border-2 border-dashed border-[#C9A227]/40 bg-[#C9A227]/5 p-8 text-center">
+              <Lock className="mx-auto mb-4 h-12 w-12 text-[#C9A227]" />
+              <h1 className="text-2xl font-bold">Contenu réservé aux inscrits</h1>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Cette leçon fait partie du cours payant « {course.title} ».
+                {!session?.user
+                  ? " Connecte-toi ou inscris-toi, puis achète le cours pour accéder au contenu complet."
+                  : " Inscris-toi à ce cours pour accéder à cette leçon."}
+              </p>
+              <div className="mt-6 flex justify-center gap-3">
+                {!session?.user ? (
+                  <>
+                    <Link
+                      href={`/login?callbackUrl=${encodeURIComponent(`/cours/${slug}/${lessonId}`)}`}
+                      className="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium hover:bg-muted"
+                    >
+                      <LogIn className="h-4 w-4" />
+                      Se connecter
+                    </Link>
+                    <Link
+                      href="/signup"
+                      className="inline-flex items-center gap-2 rounded-lg bg-[#1B2A4E] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1B2A4E]/90"
+                    >
+                      S&apos;inscrire
+                    </Link>
+                  </>
+                ) : (
+                  <Link
+                    href={`/cours/${course.slug}`}
+                    className="inline-flex items-center gap-2 rounded-lg bg-[#2DD4BF] px-4 py-2 text-sm font-semibold text-[#1B2A4E] hover:bg-[#2DD4BF]/80"
+                  >
+                    Voir le cours
+                  </Link>
+                )}
+              </div>
+              {session?.user && (
+                <p className="mt-4 text-xs text-muted-foreground">
+                  Prix : {(course.price / 100).toFixed(2)} €
+                </p>
+              )}
+            </div>
+          </div>
+        </main>
+        <SiteFooter />
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -179,7 +253,7 @@ export default async function LessonPage({
                   )}
 
                   {session?.user && (
-                    <FavoriteButton lessonId={lesson.id} courseId={course.id} isFavorited={false} />
+                    <FavoriteButton lessonId={lesson.id} courseId={course.id} isFavorited={isFavorited} />
                   )}
                   {session?.user && (
                     <LessonCompleteButton

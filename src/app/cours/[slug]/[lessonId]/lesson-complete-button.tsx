@@ -3,6 +3,7 @@
 import { useTransition } from "react";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 export function LessonCompleteButton({
   lessonId,
@@ -21,8 +22,14 @@ export function LessonCompleteButton({
     formData.set("courseId", courseId);
 
     startTransition(async () => {
-      const { markLessonCompleteAction } = await import("./lesson-actions");
-      await markLessonCompleteAction(formData);
+      try {
+        const { markLessonCompleteAction } = await import("./lesson-actions");
+        await markLessonCompleteAction(formData);
+      } catch (err) {
+        // M40: show error toast instead of leaving the button in "loading" forever
+        console.error("Failed to mark lesson complete:", err);
+        toast.error("Impossible d'enregistrer ta progression. Réessaie.");
+      }
     });
   };
 

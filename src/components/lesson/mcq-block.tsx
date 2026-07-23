@@ -87,10 +87,9 @@ export function McqBlock({ exercise }: { exercise: MCQExercise }) {
         </div>
       </CardHeader>
       <CardContent className="pt-4">
-        <div
-          className="prose prose-sm max-w-none mb-4"
-          dangerouslySetInnerHTML={{ __html: renderSimpleMarkdown(exercise.question.replace(/\\n/g, "\n")) }}
-        />
+        <div className="prose prose-sm max-w-none mb-4">
+          <span dangerouslySetInnerHTML={{ __html: renderSimpleMarkdown(exercise.question.replace(/\\n/g, "\n")) }} />
+        </div>
 
         <div className="space-y-2">
           {exercise.choices.map((choice) => {
@@ -112,13 +111,12 @@ export function McqBlock({ exercise }: { exercise: MCQExercise }) {
               <label
                 key={choice.id}
                 className={`flex items-start gap-3 rounded-xl border p-3 cursor-pointer transition-colors ${bgClass} ${submitted ? "cursor-default" : ""}`}
-                onClick={() => toggleChoice(choice.id)}
               >
                 <input
                   type={exercise.allowMultiple ? "checkbox" : "radio"}
                   name={`mcq-${exercise.id}`}
                   checked={isSelected}
-                  onChange={() => {}}
+                  onChange={() => toggleChoice(choice.id)}
                   disabled={submitted}
                   className="mt-0.5 accent-[#1B2A4E]"
                 />
@@ -194,8 +192,15 @@ export function McqBlock({ exercise }: { exercise: MCQExercise }) {
 }
 
 function renderSimpleMarkdown(text: string): string {
-  let html = text;
+  // SECURITY: escape HTML first to prevent XSS
+  let html = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
   html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  // Inline math: $...$ — kept as text so MathJax picks it up
   html = html.replace(/\$([^$]+)\$/g, "<span class='math-inline'>$$$1$$</span>");
   return html;
 }

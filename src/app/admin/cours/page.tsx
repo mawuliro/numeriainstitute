@@ -11,7 +11,10 @@ export default async function AdminCoursesPage() {
   const courses = await db.course.findMany({
     orderBy: { createdAt: "asc" },
     include: {
-      modules: { where: { isActive: true } },
+      modules: {
+        where: { isActive: true },
+        include: { lessons: { where: { isActive: true }, select: { id: true } } },
+      },
       _count: { select: { enrollments: true } },
     },
   });
@@ -39,6 +42,11 @@ export default async function AdminCoursesPage() {
             (sum, m) => sum + (m.lessons?.length ?? 0),
             0,
           );
+          const STATUS_LABELS: Record<string, string> = {
+            PUBLISHED: "Publié",
+            DRAFT: "Brouillon",
+            ARCHIVED: "Archivé",
+          };
           return (
             <Link key={course.id} href={`/admin/cours/${course.id}`}>
               <Card className="transition-all hover:shadow-md">
@@ -66,7 +74,7 @@ export default async function AdminCoursesPage() {
                       {course._count.enrollments}
                     </div>
                     <Badge variant={course.status === "PUBLISHED" ? "default" : "secondary"}>
-                      {course.status}
+                      {STATUS_LABELS[course.status] ?? course.status}
                     </Badge>
                   </div>
                 </CardContent>

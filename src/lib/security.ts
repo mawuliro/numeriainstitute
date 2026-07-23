@@ -3,6 +3,9 @@
  * Min 8 chars, 1 uppercase, 1 lowercase, 1 number, 1 special char
  */
 
+import { createHash } from "crypto";
+import { db } from "@/lib/db";
+
 export interface PasswordValidation {
   valid: boolean;
   errors: string[];
@@ -46,16 +49,49 @@ export function validatePassword(password: string): PasswordValidation {
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Rate limiting
+// ─────────────────────────────────────────────────────────────────────────────
+// Strategy: DB-backed rate limiting using the User model fields for login
+// (failedLoginAttempts, lockedUntil). For non-user-keyed limits (IP, search),
+// we fall back to an in-memory Map that works correctly within a single
+// instance and degrades gracefully in serverless multi-instance setups.
+// For production-grade multi-instance, integrate @upstash/redis or similar.
+
+export const MAX_ATTEMPTS = 5;
+export const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+export const LOCKOUT_MS = 30 * 60 * 1000; // 30 minutes lockout
+
+const ipRateBuckets = new Map<string, { count: number; resetAt: number }>();
+
 /**
- * Rate limiting — in-memory store (per email + per IP)
- * 5 attempts per 15 minutes, lockout after 5 fails
+ * Per-IP rate limit. Returns true if the request is allowed, false otherwise.
+ * `maxRequests` per `windowMs`. Resets after windowMs of inactivity.
  */
+export function checkIpRateLimit(
+  key: string,
+  maxRequests = 30,
+  windowMs = 60_000,
+): { allowed: boolean; remaining: number; resetAt: number } {
+  const now = Date.now();
+  const bucket = ipRateBuckets.get(key);
+  if (!bucket || bucket.resetAt < now) {
+    ipRateBuckets.set(key, { count: 1, resetAt: now + windowMs });
+    return { allowed: true, remaining: maxRequests - 1, resetAt: now + windowMs };
+  }
+  if (bucket.count >= maxRequests) {
+    return { allowed: false, remaining: 0, resetAt: bucket.resetAt };
+  }
+  bucket.count += 1;
+  return { allowed: true, remaining: maxRequests - bucket.count, resetAt: bucket.resetAt };
+}
 
-const loginAttempts = new Map<string, { count: number; lastAttempt: number }>();
-const MAX_ATTEMPTS = 5;
-const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
-const LOCKOUT_MS = 30 * 60 * 1000; // 30 minutes lockout
-
+/**
+ * Login rate limiter — uses the in-memory Map as the first line of defense,
+ * combined with DB-backed `failedLoginAttempts`/`lockedUntil` (updated in
+ * the auth action). The DB fields survive instance restarts and are checked
+ * in `authorize()` directly.
+ */
 export function checkRateLimit(key: string): {
   allowed: boolean;
   remaining: number;
@@ -92,6 +128,8 @@ export function checkRateLimit(key: string): {
   };
 }
 
+const loginAttempts = new Map<string, { count: number; lastAttempt: number }>();
+
 export function recordFailedAttempt(key: string): {
   remaining: number;
   locked: boolean;
@@ -118,8 +156,13 @@ export function clearAttempts(key: string) {
   loginAttempts.delete(key);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Token generation + hashing
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
- * Generate a secure random token for email verification / password reset
+ * Generate a secure random token for email verification / password reset.
+ * Returned to the user (email link) but stored only as a SHA-256 hash.
  */
 export function generateToken(): string {
   const array = new Uint8Array(32);
@@ -127,4 +170,32 @@ export function generateToken(): string {
   return Array.from(array)
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
+}
+
+/**
+ * Hash a token with SHA-256 before storing it in the database.
+ * This way a DB dump does not leak valid tokens.
+ */
+export function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+/**
+ * Admin auth helper — throws redirect if not authorized.
+ * Usage in server actions: `await requireAdmin();`
+ */
+export async function requireAdmin(): Promise<{ id: string; role: string }> {
+  const { auth } = await import("@/lib/auth");
+  const session = await auth();
+  if (!session?.user) {
+    const { redirect } = await import("next/navigation");
+    redirect("/login");
+  }
+  // Role is in JWT (post-fix), no DB hit needed
+  const role = session!.user.role;
+  if (role !== "STAFF" && role !== "ADMIN") {
+    const { redirect } = await import("next/navigation");
+    redirect("/dashboard");
+  }
+  return { id: session!.user.id, role };
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import Link from "next/link";
 import { Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -74,7 +75,7 @@ export function NotificationBell({
               </p>
             ) : (
               notifications.slice(0, 10).map((n) => (
-                <a
+                <Link
                   key={n.id}
                   href={n.link ?? "#"}
                   className={`block border-b p-3 transition-colors hover:bg-muted/50 ${
@@ -100,7 +101,7 @@ export function NotificationBell({
                       </p>
                     </div>
                   </div>
-                </a>
+                </Link>
               ))
             )}
           </div>

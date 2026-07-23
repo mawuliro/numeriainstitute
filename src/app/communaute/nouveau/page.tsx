@@ -13,9 +13,33 @@ async function createTopicAction(formData: FormData) {
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  const title = formData.get("title") as string;
-  const content = formData.get("content") as string;
+  const title = ((formData.get("title") as string) || "").trim();
+  const content = ((formData.get("content") as string) || "").trim();
   const courseId = (formData.get("courseId") as string) || null;
+
+  if (!title || title.length < 3) {
+    redirect("/communaute/nouveau?error=title");
+  }
+  if (title.length > 200) {
+    redirect("/communaute/nouveau?error=title-too-long");
+  }
+  if (!content) {
+    redirect("/communaute/nouveau?error=content");
+  }
+  if (content.length > 5000) {
+    redirect("/communaute/nouveau?error=content-too-long");
+  }
+
+  // M47: validate courseId belongs to a published course
+  if (courseId) {
+    const course = await db.course.findUnique({
+      where: { id: courseId },
+      select: { status: true },
+    });
+    if (!course || course.status !== "PUBLISHED") {
+      redirect("/communaute/nouveau?error=course");
+    }
+  }
 
   const topic = await db.communityTopic.create({
     data: {

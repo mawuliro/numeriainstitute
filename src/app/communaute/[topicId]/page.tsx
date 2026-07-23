@@ -17,9 +17,26 @@ async function replyAction(formData: FormData) {
   if (!session?.user) redirect("/login");
 
   const topicId = formData.get("topicId") as string;
-  const content = formData.get("content") as string;
+  const content = ((formData.get("content") as string) || "").trim();
 
-  if (!content.trim()) return;
+  if (!content) {
+    redirect(`/communaute/${topicId}?error=empty`);
+  }
+  if (content.length > 5000) {
+    redirect(`/communaute/${topicId}?error=too-long`);
+  }
+
+  // H4: verify the topic exists, isn't locked, and isn't deleted
+  const topic = await db.communityTopic.findUnique({
+    where: { id: topicId },
+    select: { isLocked: true },
+  });
+  if (!topic) {
+    redirect(`/communaute/${topicId}?error=not-found`);
+  }
+  if (topic.isLocked) {
+    redirect(`/communaute/${topicId}?error=locked`);
+  }
 
   await db.communityPost.create({
     data: {

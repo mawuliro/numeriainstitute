@@ -633,5 +633,7 @@ export const translations = {
 } as const;
 
 export function t(locale: Locale, key: string): string {
-  return translations[locale]?.[key] ?? translations.fr[key] ?? key;
+  const table = translations[locale] as Record<string, string> | undefined;
+  const fallback = translations.fr as Record<string, string>;
+  return table?.[key] ?? fallback[key] ?? key;
 }

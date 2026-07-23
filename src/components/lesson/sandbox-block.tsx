@@ -16,7 +16,7 @@ export function SandboxBlock({ title, code }: { title: string; code: string }) {
     if (pyodideRef.current) return pyodideRef.current;
 
     // Load script if not present
-    if (!(window as Record<string, unknown>).loadPyodide) {
+    if (!(window as unknown as Record<string, unknown>).loadPyodide) {
       await new Promise<void>((resolve, reject) => {
         const script = document.createElement("script");
         script.src = "https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js";
@@ -26,7 +26,7 @@ export function SandboxBlock({ title, code }: { title: string; code: string }) {
       });
     }
 
-    const py = await (window as Record<string, () => Promise<unknown>>).loadPyodide();
+    const py = await (window as unknown as Record<string, () => Promise<unknown>>).loadPyodide();
     await (py as { loadPackage: (pkgs: string[]) => Promise<void> }).loadPackage([
       "matplotlib",
       "numpy",

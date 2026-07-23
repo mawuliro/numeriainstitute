@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 export const dynamic = "force-dynamic";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = "https://numeriainstitute.vercel.app";
+  const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
   const staticPages = [
     { url: "/", priority: 1.0, changeFrequency: "weekly" as const },
     { url: "/cours", priority: 0.9, changeFrequency: "daily" as const },
@@ -18,8 +18,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: "/visioconference", priority: 0.5, changeFrequency: "weekly" as const },
     { url: "/formations", priority: 0.5, changeFrequency: "weekly" as const },
     { url: "/admissions", priority: 0.5, changeFrequency: "monthly" as const },
-    { url: "/login", priority: 0.3, changeFrequency: "yearly" as const },
-    { url: "/signup", priority: 0.4, changeFrequency: "yearly" as const },
+    // Note: /login and /signup are excluded — they should be noindex
   ];
 
   // Fetch dynamic pages safely — fall back to empty arrays if DB is unavailable

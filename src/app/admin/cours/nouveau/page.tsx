@@ -2,32 +2,42 @@ export const dynamic = "force-dynamic";
 
 import { db } from "@/lib/db";
 import { redirect } from "next/navigation";
+import { requireAdmin } from "@/lib/security";
 
 async function createCourseAction(formData: FormData) {
   "use server";
-  const title = formData.get("title") as string;
-  const slug = formData.get("slug") as string;
-  const description = formData.get("description") as string;
-  const shortDescription = formData.get("shortDescription") as string;
-  const category = formData.get("category") as string;
-  const level = formData.get("level") as string;
+  await requireAdmin();
+  const title = (formData.get("title") as string)?.trim();
+  const slug = (formData.get("slug") as string)?.trim();
+  const description = (formData.get("description") as string)?.trim();
+  const shortDescription = (formData.get("shortDescription") as string)?.trim();
+  const category = (formData.get("category") as string) || "physique";
+  const level = (formData.get("level") as string) || "DEBUTANT";
   const estimatedHours = parseInt(formData.get("estimatedHours") as string) || 40;
 
-  await db.course.create({
-    data: {
-      title,
-      slug,
-      description,
-      shortDescription,
-      category,
-      level: level as "DEBUTANT" | "INTERMEDIAIRE" | "AVANCE",
-      estimatedHours,
-      price: 0,
-      isFree: true,
-      status: "PUBLISHED",
-      language: "fr",
-    },
-  });
+  if (!title || !slug || !description) {
+    redirect("/admin/cours/nouveau?error=missing");
+  }
+
+  try {
+    await db.course.create({
+      data: {
+        title,
+        slug,
+        description,
+        shortDescription,
+        category,
+        level: level as "DEBUTANT" | "INTERMEDIAIRE" | "AVANCE",
+        estimatedHours,
+        price: 0,
+        isFree: true,
+        status: "PUBLISHED",
+        language: "fr",
+      },
+    });
+  } catch {
+    redirect("/admin/cours/nouveau?error=slug-taken");
+  }
 
   redirect("/admin/cours");
 }

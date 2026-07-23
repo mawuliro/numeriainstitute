@@ -6,7 +6,10 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  // Local dev uses SQLite (file:./db/custom.db). Production must use
+  // PostgreSQL — switch this line to "postgresql" and set DATABASE_URL to a
+  // postgres:// URL. To switch providers, you must also run `prisma generate`.
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -31,6 +34,8 @@ model User {
   emailVerifyExpires  DateTime?
   passwordResetToken  String?
   passwordResetExpires DateTime?
+  // Soft-delete (RGPD) — admin "deletion" sets this instead of row deletion
+  deletedAt           DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -52,6 +57,11 @@ model User {
   badges           UserBadge[]
   streak           UserStreak?
   certificates     Certificate[]
+
+  @@index([emailVerifyToken])
+  @@index([passwordResetToken])
+  @@index([role])
+  @@index([deletedAt])
 }
 
 enum UserRole {
@@ -91,6 +101,9 @@ model Course {
 
   @@index([slug])
   @@index([status])
+  @@index([category])
+  @@index([level])
+  @@index([isFree])
 }
 
 enum CourseLevel {
@@ -340,6 +353,7 @@ model LessonProgress {
   @@unique([userId, lessonId])
   @@index([userId])
   @@index([lessonId])
+  @@index([userId, isCompleted])
 }
 
 model ExerciseProgress {
@@ -398,6 +412,8 @@ model Payment {
 
   @@index([userId])
   @@index([status])
+  @@index([courseId])
+  @@index([createdAt])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -416,6 +432,8 @@ model Notification {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([userId, isRead])
+  @@index([createdAt])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -440,6 +458,8 @@ model BlogPost {
 
   @@index([slug])
   @@index([isPublished])
+  @@index([publishedAt])
+  @@index([category])
 }
 
 model CommunityTopic {
@@ -459,6 +479,8 @@ model CommunityTopic {
 
   @@index([courseId])
   @@index([authorId])
+  @@index([updatedAt])
+  @@index([isPinned])
 }
 
 model CommunityPost {

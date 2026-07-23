@@ -1,4 +1,4 @@
-import type { LessonBlock, MCQExercise, FillBlankExercise, TrueFalseExercise, InteractiveLab } from "@prisma/client";
+import type { LessonBlock, MCQExercise, FillBlankExercise, TrueFalseExercise, CodeExercise, InteractiveLab } from "@prisma/client";
 import { TextBlock } from "./text-block";
 import { SandboxBlock } from "./sandbox-block";
 import { McqBlock } from "./mcq-block";
@@ -18,7 +18,7 @@ type BlockWithRelations = LessonBlock & {
   mcq: (MCQExercise & { choices: Choice[] }) | null;
   fillBlank: FillBlankExercise | null;
   trueFalse: TrueFalseExercise | null;
-  codeEx: null;
+  codeEx: CodeExercise | null;
   lab: InteractiveLab | null;
 };
 

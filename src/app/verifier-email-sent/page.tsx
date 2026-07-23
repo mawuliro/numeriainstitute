@@ -10,7 +10,7 @@ export default async function VerifyEmailSentPage({
 }: {
   searchParams: Promise<{ email?: string; failed?: string; token?: string }>;
 }) {
-  const { email, failed, token } = await searchParams();
+  const { email, failed, token } = await searchParams;
   const emailFailed = failed === "true";
 
   const baseUrl = process.env.NEXTAUTH_URL || "https://numeriainstitute.vercel.app";

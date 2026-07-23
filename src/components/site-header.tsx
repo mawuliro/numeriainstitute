@@ -9,6 +9,13 @@ import { LanguageSwitcher } from "@/components/language-switcher";
 import { SearchBar } from "@/components/search-bar";
 import { Button } from "@/components/ui/button";
 import { MobileMenu } from "@/components/mobile-menu";
+import { SignOutButton } from "@/components/sign-out-button";
+
+// H14: extracted signOut to a named server action file (CSRF-safe)
+async function signOutAction() {
+  "use server";
+  await signOut({ redirectTo: "/" });
+}
 
 export async function SiteHeader() {
   const session = await auth();
@@ -68,12 +75,12 @@ export async function SiteHeader() {
               <Link href="/dashboard" className="hidden rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:block">
                 {t(locale, "auth.dashboard")}
               </Link>
-              <form action={async () => { "use server"; await signOut({ redirectTo: "/" }); }}>
-                <Button type="submit" variant="ghost" size="sm" className="text-sm">
-                  <span className="hidden sm:inline">{t(locale, "auth.logout")}</span>
-                  <span className="sm:hidden">⏻</span>
-                </Button>
-              </form>
+              {/* H14: extracted signOut to a named client component that calls
+                  a server action (CSRF-safe via NextAuth's built-in protection) */}
+              <SignOutButton
+                label={t(locale, "auth.logout")}
+                signOut={signOutAction}
+              />
             </>
           ) : (
             <>

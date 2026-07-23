@@ -13,9 +13,9 @@ export function ResendForm({ email }: { email: string }) {
     const formData = new FormData();
     formData.set("email", email);
     const result = await resendVerificationAction(formData);
-    if ("success" in result) {
+    if ("success" in result && result.success) {
       setMessage(result.success);
-    } else if ("error" in result) {
+    } else if ("error" in result && result.error) {
       setMessage(result.error);
     }
     setSending(false);

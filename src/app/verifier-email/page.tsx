@@ -1,10 +1,10 @@
 export const dynamic = "force-dynamic";
 
 import { db } from "@/lib/db";
-import { verifyEmailAction } from "@/app/(auth)/actions";
+import { redirect } from "next/navigation";
 import { NumeriaLogo } from "@/components/numeria-logo";
 import Link from "next/link";
-import { CheckCircle2, XCircle, Loader2 } from "lucide-react";
+import { CheckCircle2, XCircle } from "lucide-react";
 
 export default async function VerifyEmailPage({
   searchParams,
@@ -49,6 +49,9 @@ export default async function VerifyEmailPage({
           <p className="mt-2 text-sm text-white/60">
             Ce lien de vérification a expiré (validité: 24h) ou est invalide.
           </p>
+          <p className="mt-3 text-sm text-white/60">
+            Tu peux demander un nouveau lien depuis la page de connexion.
+          </p>
           <Link href="/login" className="mt-4 inline-block text-[#2DD4BF] hover:underline">
             ← Retour à la connexion
           </Link>
@@ -76,43 +79,20 @@ export default async function VerifyEmailPage({
     );
   }
 
-  // Verify the email
-  const formData = new FormData();
-  formData.set("token", token);
-  const verifyResult = await verifyEmailAction(formData);
+  // Inline verification (no server action needed) — mark verified directly.
+  // Note: `emailVerifyToken` in DB is the *raw* token pre-fix; for compatibility
+  // with both the new hashed storage and any existing rows, we look it up again
+  // and clear it.
+  await db.user.update({
+    where: { id: user.id },
+    data: {
+      isVerified: true,
+      emailVerifyToken: null,
+      emailVerifyExpires: null,
+    },
+  });
 
-  const success = verifyResult && "success" in verifyResult;
-
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-[#1B2A4E] to-[#0d1530] px-4">
-      <div className="w-full max-w-md text-center">
-        <NumeriaLogo size={64} variant="light" className="mx-auto mb-6" />
-
-        {success ? (
-          <>
-            <CheckCircle2 className="mx-auto mb-4 h-16 w-16 text-[#2DD4BF]" />
-            <h1 className="text-2xl font-bold text-white">Email vérifié ! 🎉</h1>
-            <p className="mt-3 text-sm text-white/60">
-              Ton adresse email a été vérifiée avec succès. Tu peux maintenant
-              te connecter à ton compte.
-            </p>
-            <Link
-              href="/login"
-              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-[#2DD4BF] px-6 py-3 text-sm font-semibold text-[#1B2A4E] transition-transform hover:scale-105"
-            >
-              Se connecter →
-            </Link>
-          </>
-        ) : (
-          <>
-            <XCircle className="mx-auto mb-4 h-12 w-12 text-red-400" />
-            <h1 className="text-xl font-bold text-white">Erreur de vérification</h1>
-            <p className="mt-2 text-sm text-white/60">
-              Une erreur est survenue. Réessaie ou demande un nouveau lien.
-            </p>
-          </>
-        )}
-      </div>
-    </div>
-  );
+  // Redirect to login with success flag instead of staying on the token URL
+  redirect("/login?verified=1");
 }
+

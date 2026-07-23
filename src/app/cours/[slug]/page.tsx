@@ -2,13 +2,36 @@ export const dynamic = "force-dynamic";
 
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import type { Metadata } from "next";
 import { getCourseForCatalog } from "@/lib/queries";
+import { db } from "@/lib/db";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Clock, BookOpen, Users, ArrowRight } from "lucide-react";
 import { getLocale, t } from "@/lib/i18n";
+
+// M19: per-page metadata for SEO
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const course = await db.course.findUnique({
+    where: { slug },
+    select: { title: true, shortDescription: true, description: true },
+  });
+  if (!course) return { title: "Cours introuvable — Numeria Institute" };
+  const description = course.shortDescription ?? course.description.slice(0, 160);
+  return {
+    title: `${course.title} — Numeria Institute`,
+    description,
+    openGraph: { title: course.title, description, type: "website", locale: "fr_FR" },
+    twitter: { card: "summary_large_image", title: course.title, description },
+  };
+}
 
 export default async function CourseDetailPage({
   params,

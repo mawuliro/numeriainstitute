@@ -34,9 +34,9 @@ export function LoginForm({ locale }: { locale: Locale }) {
     const formData = new FormData();
     formData.set("email", emailForResend);
     const result = await resendVerificationAction(formData);
-    if ("success" in result) {
+    if ("success" in result && result.success) {
       setResendMsg(result.success);
-    } else if ("error" in result) {
+    } else if ("error" in result && result.error) {
       setResendMsg(result.error);
     }
     setResending(false);

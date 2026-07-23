@@ -8,9 +8,10 @@ interface EmailParams {
   to: string;
   subject: string;
   html: string;
+  replyTo?: string;
 }
 
-export async function sendEmail({ to, subject, html }: EmailParams): Promise<boolean> {
+export async function sendEmail({ to, subject, html, replyTo }: EmailParams): Promise<boolean> {
   const apiKey = process.env.BREVO_API_KEY;
 
   if (!apiKey) {
@@ -22,11 +23,30 @@ export async function sendEmail({ to, subject, html }: EmailParams): Promise<boo
   }
 
   try {
-    // Use the Brevo default sender (no domain verification needed)
-    // The sender email must match a verified sender in Brevo
-    // For free accounts, use the email you registered with on Brevo
-    const senderEmail = process.env.BREVO_SENDER_EMAIL || "noreply@brevo.com";
-    const senderName = process.env.BREVO_SENDER_NAME || "Numeria Institute";
+    const senderEmail =
+      process.env.BREVO_SENDER_EMAIL || "noreply@brevo.com";
+    const senderName =
+      process.env.BREVO_SENDER_NAME || "Numeria Institute";
+
+    // H15: in production, refuse the default shared Brevo sender — emails would
+    // land in spam. Require a verified custom domain sender.
+    if (
+      process.env.NODE_ENV === "production" &&
+      senderEmail === "noreply@brevo.com"
+    ) {
+      console.error(
+        "BREVO_SENDER_EMAIL is not set — emails will fail SPF/DKIM in production.",
+      );
+      return false;
+    }
+
+    const body: Record<string, unknown> = {
+      sender: { name: senderName, email: senderEmail },
+      to: [{ email: to }],
+      subject,
+      htmlContent: html,
+    };
+    if (replyTo) body.replyTo = [{ email: replyTo }];
 
     const response = await fetch("https://api.brevo.com/v3/smtp/email", {
       method: "POST",
@@ -34,15 +54,7 @@ export async function sendEmail({ to, subject, html }: EmailParams): Promise<boo
         "Content-Type": "application/json",
         "api-key": apiKey,
       },
-      body: JSON.stringify({
-        sender: {
-          name: senderName,
-          email: senderEmail,
-        },
-        to: [{ email: to }],
-        subject,
-        htmlContent: html,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {

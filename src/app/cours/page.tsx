@@ -16,13 +16,31 @@ const CATEGORY_ICONS: Record<string, typeof Atom> = {
   latex: FileText,
 };
 
+const LEVEL_LABELS: Record<string, string> = {
+  DEBUTANT: "Débutant",
+  INTERMEDIAIRE: "Intermédiaire",
+  AVANCE: "Avancé",
+};
+
+const CATEGORY_LABELS: Record<string, string> = {
+  physique: "Physique",
+  mathematiques: "Mathématiques",
+  python: "Python",
+  informatique: "Informatique",
+  latex: "LaTeX",
+  autre: "Autre",
+};
+
 export default async function CataloguePage() {
   const locale = await getLocale();
   const courses = await db.course.findMany({
     where: { status: "PUBLISHED" },
     orderBy: { createdAt: "asc" },
     include: {
-      modules: { where: { isActive: true } },
+      modules: {
+        where: { isActive: true },
+        include: { lessons: { where: { isActive: true }, select: { id: true } } },
+      },
       _count: { select: { enrollments: true } },
     },
   });
@@ -59,8 +77,7 @@ export default async function CataloguePage() {
             ) : (
               <div className="grid gap-4 sm:gap-6 sm:grid-cols-2 lg:grid-cols-3">
                 {courses.map((course) => {
-                  const Icon =
-                    CATEGORY_ICONS[course.category] ?? FileText;
+                  const Icon = CATEGORY_ICONS[course.category] ?? FileText;
                   const totalLessons = course.modules.reduce(
                     (sum, m) => sum + (m.lessons?.length ?? 0),
                     0,
@@ -75,7 +92,7 @@ export default async function CataloguePage() {
                               <Icon className="h-6 w-6" />
                             </div>
                             <Badge variant="outline">
-                              {course.category}
+                              {CATEGORY_LABELS[course.category] ?? course.category}
                             </Badge>
                           </div>
                           <CardTitle className="mt-3 text-xl group-hover:text-primary">
@@ -89,7 +106,7 @@ export default async function CataloguePage() {
 
                           <div className="mt-4 flex flex-wrap gap-2 text-xs">
                             <Badge variant="secondary">
-                              {course.level.toLowerCase()}
+                              {LEVEL_LABELS[course.level] ?? course.level}
                             </Badge>
                             <Badge variant="secondary">
                               <Clock className="mr-1 h-3 w-3" />

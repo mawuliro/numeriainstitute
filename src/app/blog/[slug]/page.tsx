@@ -2,12 +2,39 @@ export const dynamic = "force-dynamic";
 
 import { db } from "@/lib/db";
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { ArrowLeft, Calendar } from "lucide-react";
 import { TextBlock } from "@/components/lesson/text-block";
+
+// M19: per-page metadata for SEO
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const post = await db.blogPost.findUnique({
+    where: { slug },
+    select: { title: true, excerpt: true, category: true },
+  });
+  if (!post) return { title: "Article introuvable — Numeria Institute" };
+  const description = post.excerpt ?? `Article: ${post.title}`;
+  return {
+    title: `${post.title} — Numeria Institute Blog`,
+    description,
+    openGraph: {
+      title: post.title,
+      description,
+      type: "article",
+      locale: "fr_FR",
+    },
+    twitter: { card: "summary_large_image", title: post.title, description },
+  };
+}
 
 export default async function BlogPostPage({
   params,
