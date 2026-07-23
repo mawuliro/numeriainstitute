@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
+import { authConfig } from "@/auth.config";
 
 // Fail fast at boot if AUTH_SECRET is missing in production.
 if (process.env.NODE_ENV === "production" && !process.env.AUTH_SECRET) {
@@ -10,28 +11,8 @@ if (process.env.NODE_ENV === "production" && !process.env.AUTH_SECRET) {
   );
 }
 
-// Augment NextAuth types so `session.user.role` is typed.
-declare module "next-auth" {
-  interface Session {
-    user: {
-      id: string;
-      email: string;
-      name?: string | null;
-      role: "STUDENT" | "MENTOR" | "STAFF" | "ADMIN";
-    };
-  }
-  interface User {
-    role?: "STUDENT" | "MENTOR" | "STAFF" | "ADMIN";
-  }
-}
-
 export const { handlers, signIn, signOut, auth } = NextAuth({
-  secret: process.env.AUTH_SECRET,
-  trustHost: true,
-  session: { strategy: "jwt" },
-  pages: {
-    signIn: "/login",
-  },
+  ...authConfig,
   providers: [
     Credentials({
       name: "credentials",
@@ -86,35 +67,4 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
     }),
   ],
-  callbacks: {
-    async jwt({ token, user }) {
-      // On first sign-in, capture user.id and role into the JWT
-      if (user) {
-        token.id = user.id;
-        (token as Record<string, unknown>).role =
-          user.role ?? "STUDENT";
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      // Read role from JWT (no DB hit per request)
-      if (session.user && token.id) {
-        session.user.id = token.id as string;
-        // token is untyped (JWT module augmentation is finicky); cast safely.
-        const role = (token as Record<string, unknown>).role as
-          | "STUDENT"
-          | "MENTOR"
-          | "STAFF"
-          | "ADMIN"
-          | undefined;
-        if (role) {
-          session.user.role = role;
-        } else {
-          // Fallback for sessions created before role was added to JWT
-          session.user.role = "STUDENT";
-        }
-      }
-      return session;
-    },
-  },
 });

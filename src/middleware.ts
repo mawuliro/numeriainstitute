@@ -1,9 +1,16 @@
-import { auth } from "@/lib/auth";
+import NextAuth from "next-auth";
+import { authConfig } from "@/auth.config";
 import { NextResponse } from "next/server";
 
 // H13: protect routes via NextAuth middleware.
+// IMPORTANT: this file imports ONLY from `@/auth.config` (no Prisma, no bcrypt)
+// because the Edge runtime has a 1 MB size limit on Vercel's free plan.
+// The heavy Credentials provider lives in `src/lib/auth.ts` (Node.js runtime).
+//
 // Note: in Next.js 16 the file should be `proxy.ts`, but `middleware.ts`
 // still works as a deprecated alias. When you upgrade, rename to `src/proxy.ts`.
+const { auth } = NextAuth(authConfig);
+
 export default auth((req) => {
   const isLoggedIn = !!req.auth;
   const { pathname } = req.nextUrl;
