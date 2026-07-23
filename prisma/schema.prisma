@@ -6,10 +6,9 @@ generator client {
 }
 
 datasource db {
-  // Local dev uses SQLite (file:./db/custom.db). Production must use
-  // PostgreSQL — switch this line to "postgresql" and set DATABASE_URL to a
-  // postgres:// URL. To switch providers, you must also run `prisma generate`.
-  provider = "sqlite"
+  // Production uses PostgreSQL (Neon / Vercel Postgres / Supabase).
+  // For local dev, either install Postgres locally OR use a free Neon DB.
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
