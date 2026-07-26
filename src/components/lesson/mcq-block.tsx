@@ -76,41 +76,43 @@ export function McqBlock({ exercise }: { exercise: MCQExercise }) {
     [...selected].every((id) => correctIds.has(id));
 
   return (
-    <Card className="overflow-hidden">
-      <CardHeader className="bg-muted/50">
+    <Card className="overflow-hidden border-[#1B2A4E]/20 shadow-md">
+      <CardHeader className="bg-gradient-to-r from-[#1B2A4E] to-[#2DD4BF]/10 border-b border-[#1B2A4E]/20">
         <div className="flex items-center gap-2">
-          <span className="text-base">🔘</span>
-          <span className="font-bold text-sm">{exercise.title}</span>
-          <Badge variant="secondary" className="ml-auto">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#2DD4BF]/15 ring-1 ring-[#2DD4BF]/30">
+            <span className="text-base">🎯</span>
+          </span>
+          <span className="font-bold text-sm text-white">{exercise.title}</span>
+          <Badge className="ml-auto bg-[#C9A227]/20 text-[#C9A227] ring-1 ring-[#C9A227]/30 border-0">
             {exercise.points} pts
           </Badge>
         </div>
       </CardHeader>
-      <CardContent className="pt-4">
-        <div className="prose prose-sm max-w-none mb-4">
+      <CardContent className="pt-5">
+        <div className="prose prose-sm max-w-none mb-5 rounded-lg bg-muted/30 p-4 border-l-2 border-[#1B2A4E]">
           <span dangerouslySetInnerHTML={{ __html: renderSimpleMarkdown(exercise.question.replace(/\\n/g, "\n")) }} />
         </div>
 
-        <div className="space-y-2">
-          {exercise.choices.map((choice) => {
+        <div className="space-y-2.5">
+          {exercise.choices.map((choice, idx) => {
             const isSelected = selected.has(choice.id);
             const isCorrectChoice = choice.isCorrect;
 
-            let bgClass = "bg-muted/30 border-border hover:border-primary/30";
+            let bgClass = "bg-card border-border hover:border-[#2DD4BF]/40 hover:bg-[#2DD4BF]/5";
             if (submitted) {
               if (isCorrectChoice) {
-                bgClass = "bg-green-50 dark:bg-green-900/20 border-green-400";
+                bgClass = "bg-green-50 dark:bg-green-900/20 border-green-400 dark:border-green-600";
               } else if (isSelected && !isCorrectChoice) {
-                bgClass = "bg-red-50 dark:bg-red-900/20 border-red-400";
+                bgClass = "bg-red-50 dark:bg-red-900/20 border-red-400 dark:border-red-600";
               }
             } else if (isSelected) {
-              bgClass = "bg-primary/5 border-primary";
+              bgClass = "bg-[#1B2A4E]/5 border-[#1B2A4E] dark:bg-[#2DD4BF]/10 dark:border-[#2DD4BF]";
             }
 
             return (
               <label
                 key={choice.id}
-                className={`flex items-start gap-3 rounded-xl border p-3 cursor-pointer transition-colors ${bgClass} ${submitted ? "cursor-default" : ""}`}
+                className={`flex items-start gap-3 rounded-xl border-2 p-3.5 cursor-pointer transition-all ${bgClass} ${submitted ? "cursor-default" : "hover:shadow-sm"}`}
               >
                 <input
                   type={exercise.allowMultiple ? "checkbox" : "radio"}
@@ -118,14 +120,17 @@ export function McqBlock({ exercise }: { exercise: MCQExercise }) {
                   checked={isSelected}
                   onChange={() => toggleChoice(choice.id)}
                   disabled={submitted}
-                  className="mt-0.5 accent-[#1B2A4E]"
+                  className="mt-0.5 h-4 w-4 accent-[#2DD4BF]"
                 />
-                <span className="text-sm flex-1">{choice.text}</span>
+                <span className="text-sm flex-1 leading-relaxed text-foreground">
+                  <span className="text-xs font-mono text-muted-foreground mr-2">{String.fromCharCode(65 + idx)}.</span>
+                  {choice.text}
+                </span>
                 {submitted && isCorrectChoice && (
-                  <span className="text-green-600">✅</span>
+                  <span className="text-green-600 dark:text-green-400 text-lg">✓</span>
                 )}
                 {submitted && isSelected && !isCorrectChoice && (
-                  <span className="text-red-600">❌</span>
+                  <span className="text-red-600 dark:text-red-400 text-lg">✗</span>
                 )}
               </label>
             );
@@ -135,22 +140,24 @@ export function McqBlock({ exercise }: { exercise: MCQExercise }) {
         {/* Feedback */}
         {submitted && (
           <div
-            className={`mt-4 rounded-xl p-4 text-sm ${
+            className={`mt-5 rounded-xl p-4 text-sm border-2 ${
               isCorrect
-                ? "bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300 border border-green-200"
-                : "bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300 border border-red-200"
+                ? "bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300 border-green-300 dark:border-green-700"
+                : "bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300 border-red-300 dark:border-red-700"
             }`}
           >
-            <p className="font-bold">
-              {isCorrect
-                ? `✅ Bonne réponse ! +${exercise.points} pts`
-                : "❌ Ce n'est pas la bonne réponse."}
+            <p className="font-bold flex items-center gap-2">
+              {isCorrect ? (
+                <><span className="text-lg">🎉</span> Bonne réponse ! +{exercise.points} pts</>
+              ) : (
+                <><span className="text-lg">💭</span> Ce n'est pas la bonne réponse.</>
+              )}
             </p>
             {submitted &&
               exercise.choices
                 .filter((c) => selected.has(c.id) && c.feedback)
                 .map((c) => (
-                  <p key={c.id} className="mt-1 text-xs">
+                  <p key={c.id} className="mt-2 text-xs leading-relaxed opacity-90">
                     {c.feedback}
                   </p>
                 ))}
@@ -159,9 +166,12 @@ export function McqBlock({ exercise }: { exercise: MCQExercise }) {
 
         {/* Explanation */}
         {showExplanation && exercise.explanation && (
-          <div className="mt-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 p-4 text-sm text-blue-800 dark:text-blue-300">
-            <strong>💡 Explication :</strong>{" "}
+          <div className="mt-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-200 dark:border-blue-800 p-4 text-sm text-blue-800 dark:text-blue-300">
+            <strong className="flex items-center gap-1.5 mb-1">
+              <span>💡</span> Explication
+            </strong>
             <span
+              className="leading-relaxed"
               dangerouslySetInnerHTML={{
                 __html: renderSimpleMarkdown(exercise.explanation),
               }}
@@ -170,19 +180,19 @@ export function McqBlock({ exercise }: { exercise: MCQExercise }) {
         )}
 
         {/* Actions */}
-        <div className="mt-4 flex gap-2">
+        <div className="mt-5 flex gap-2">
           {!submitted ? (
             <Button
               onClick={submit}
               disabled={selected.size === 0}
               size="sm"
-              className="bg-[#1B2A4E] hover:bg-[#1B2A4E]/90"
+              className="bg-[#2DD4BF] text-[#1B2A4E] hover:bg-[#2DD4BF]/80 font-semibold"
             >
-              ✅ Valider ma réponse
+              ✓ Valider ma réponse
             </Button>
           ) : (
-            <Button onClick={reset} variant="outline" size="sm">
-              ↩️ Réessayer
+            <Button onClick={reset} variant="outline" size="sm" className="border-[#1B2A4E]/30 text-[#1B2A4E] hover:bg-[#1B2A4E]/5">
+              ↻ Réessayer
             </Button>
           )}
         </div>

@@ -92,17 +92,19 @@ plt.close('all')
   };
 
   return (
-    <div className="rounded-2xl border border-border overflow-hidden shadow-sm">
-      {/* Header */}
-      <div className="flex items-center gap-2 bg-muted/50 px-4 py-2.5 border-b">
-        <span className="text-base">🐍</span>
-        <span className="font-semibold text-sm">{title}</span>
-        <div className="ml-auto flex items-center gap-2">
+    <div className="rounded-2xl border border-[#1B2A4E]/20 overflow-hidden shadow-md">
+      {/* Header — branded */}
+      <div className="flex items-center gap-2 bg-gradient-to-r from-[#1B2A4E] to-[#2DD4BF]/10 px-4 py-3 border-b border-[#1B2A4E]/20">
+        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#2DD4BF]/15 ring-1 ring-[#2DD4BF]/30">
+          <span className="text-sm">🐍</span>
+        </span>
+        <span className="font-semibold text-sm text-white">{title}</span>
+        <div className="ml-auto flex items-center gap-1.5">
           <Button
             size="sm"
             variant="ghost"
             onClick={() => navigator.clipboard.writeText(code)}
-            className="h-7 text-xs"
+            className="h-7 text-xs text-white/70 hover:text-white hover:bg-white/10"
           >
             <Copy className="h-3 w-3" />
           </Button>
@@ -110,7 +112,7 @@ plt.close('all')
             size="sm"
             variant="ghost"
             onClick={reset}
-            className="h-7 text-xs"
+            className="h-7 text-xs text-white/70 hover:text-white hover:bg-white/10"
           >
             <RotateCcw className="h-3 w-3" />
           </Button>
@@ -118,7 +120,7 @@ plt.close('all')
             size="sm"
             onClick={runCode}
             disabled={running}
-            className="h-7 text-xs bg-[#2DD4BF] text-[#1B2A4E] hover:bg-[#2DD4BF]/80"
+            className="h-7 text-xs bg-[#2DD4BF] text-[#1B2A4E] hover:bg-[#2DD4BF]/80 font-semibold"
           >
             <Play className="h-3 w-3" />
             {running ? "Exécution..." : "Exécuter"}
@@ -127,7 +129,7 @@ plt.close('all')
       </div>
 
       {/* Code editor */}
-      <div className="bg-gray-900 p-4 overflow-x-auto">
+      <div className="bg-[#0f172a] p-4 overflow-x-auto">
         <pre className="text-sm text-gray-100 font-mono leading-relaxed">
           <code>{code.replace(/\\n/g, "\n")}</code>
         </pre>
@@ -135,23 +137,25 @@ plt.close('all')
 
       {/* Output */}
       {(output || imageData || error) && (
-        <div className="border-t bg-white dark:bg-gray-900 p-4">
+        <div className="border-t border-border bg-muted/30 p-4">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Résultat</p>
           {error && (
-            <div className="rounded-lg bg-red-50 dark:bg-red-900/20 p-3 text-sm text-red-700 dark:text-red-300 font-mono">
+            <div className="rounded-lg bg-red-50 dark:bg-red-900/20 p-3 text-sm text-red-700 dark:text-red-300 font-mono border border-red-200 dark:border-red-800">
               {error}
             </div>
           )}
           {imageData && (
             <div className="mb-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={imageData}
                 alt="Résultat de la simulation"
-                className="w-full rounded-lg border"
+                className="w-full rounded-lg border bg-white"
               />
             </div>
           )}
           {output && !imageData && (
-            <pre className="text-sm font-mono text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+            <pre className="text-sm font-mono text-gray-700 dark:text-gray-300 whitespace-pre-wrap bg-white dark:bg-gray-900 p-3 rounded-lg border">
               {output}
             </pre>
           )}

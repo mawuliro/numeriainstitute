@@ -193,26 +193,25 @@ export default async function LessonPage({
           <div className="grid gap-4 sm:gap-6 lg:grid-cols-[1fr_280px]">
             {/* Main content */}
             <div className="min-w-0">
-              {/* Lesson header */}
-              <div className="mb-6 border-b pb-4">
-                <p className="mb-1 text-sm text-muted-foreground">
-                  {t(locale, "course.lesson")} {currentIdx + 1}{" "}
-                  {t(locale, "course.of")} {allLessons.length}
-                </p>
-                <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
-                  {lesson.title}
-                </h1>
-                <div className="mt-2 flex items-center gap-3 text-sm text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <Clock className="h-3.5 w-3.5" />
+              {/* Lesson header — branded hero */}
+              <div className="mb-8 rounded-2xl bg-gradient-to-br from-[#1B2A4E] to-[#0d1530] p-6 sm:p-8 text-white shadow-lg">
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-[#2DD4BF]/15 px-3 py-1 text-xs font-semibold text-[#2DD4BF] ring-1 ring-[#2DD4BF]/30">
+                    {t(locale, "course.lesson")} {currentIdx + 1} {t(locale, "course.of")} {allLessons.length}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/5 px-3 py-1 text-xs text-white/70 ring-1 ring-white/10">
+                    <Clock className="h-3 w-3" />
                     {lesson.estimatedMinutes} {t(locale, "course.minutes")}
                   </span>
                   {lesson.isFreePreview && (
-                    <Badge variant="outline" className="text-[#2DD4BF]">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-[#C9A227]/15 px-3 py-1 text-xs font-semibold text-[#C9A227] ring-1 ring-[#C9A227]/30">
                       {t(locale, "course.freePreview")}
-                    </Badge>
+                    </span>
                   )}
                 </div>
+                <h1 className="text-2xl font-bold tracking-tight md:text-3xl leading-tight">
+                  {lesson.title}
+                </h1>
               </div>
 
               {/* Lesson blocks */}

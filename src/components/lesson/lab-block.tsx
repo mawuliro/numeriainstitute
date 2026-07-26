@@ -31,6 +31,7 @@ type Challenge = {
 type InteractiveLab = {
   id: string;
   title: string;
+  instructions?: string;
   simulationCode: string;
   sliderConfigJson: string;
   challengesJson: string;
@@ -177,49 +178,56 @@ plt.close('all')
 
   return (
     <Card className="overflow-hidden border-purple-200">
-      {/* Header */}
-      <div className="flex items-center gap-2 bg-gradient-to-r from-purple-500 to-indigo-500 px-5 py-3.5 border-b">
-        <span className="text-lg">🔬</span>
-        <span className="font-bold text-white text-sm">{lab.title}</span>
-        <span className="ml-auto text-xs bg-white/20 text-white px-2 py-0.5 rounded-full">
+      {/* Header — Numeria branded */}
+      <div className="flex items-center gap-2 bg-gradient-to-r from-[#1B2A4E] via-[#1B2A4E] to-[#2DD4BF]/20 px-5 py-3.5 border-b border-[#1B2A4E]/20">
+        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#2DD4BF]/15 ring-1 ring-[#2DD4BF]/30">
+          <span className="text-base">🔬</span>
+        </span>
+        <span className="font-bold text-white text-base">{lab.title}</span>
+        <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-[#C9A227]/15 px-2.5 py-0.5 text-xs font-semibold text-[#C9A227] ring-1 ring-[#C9A227]/30">
           {lab.points} pts
         </span>
       </div>
 
+      {/* Instructions strip */}
+      <div className="px-5 py-3 bg-muted/30 border-b text-xs text-muted-foreground italic">
+        {lab.instructions}
+      </div>
+
       <div className="grid md:grid-cols-2 gap-0">
         {/* LEFT: Simulation */}
-        <div className="p-5 border-r dark:border-gray-700">
-          <h3 className="text-sm font-bold text-gray-700 dark:text-gray-200 mb-3">
+        <div className="p-5 border-r border-border dark:border-gray-700">
+          <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-[#1B2A4E] dark:text-[#2DD4BF] mb-3">
             📊 Simulation
           </h3>
 
           {/* Sliders */}
-          <div className="space-y-3 mb-4">
+          <div className="space-y-4 mb-5">
             {sliders.map((slider) => (
               <div key={slider.name}>
-                <label className="block text-xs text-gray-600 dark:text-gray-300 mb-1">
-                  {slider.label}
-                  {slider.unit ? ` (${slider.unit})` : ""}
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="range"
-                    min={slider.min}
-                    max={slider.max}
-                    step={slider.step}
-                    value={sliderValues[slider.name]}
-                    onChange={(e) =>
-                      setSliderValues((prev) => ({
-                        ...prev,
-                        [slider.name]: parseFloat(e.target.value),
-                      }))
-                    }
-                    className="flex-1 accent-purple-500"
-                  />
-                  <span className="text-xs font-mono text-gray-700 dark:text-gray-200 w-14 text-right">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium text-foreground">
+                    {slider.label}
+                    {slider.unit ? ` (${slider.unit})` : ""}
+                  </label>
+                  <span className="text-xs font-mono font-bold text-[#2DD4BF] bg-[#2DD4BF]/10 px-2 py-0.5 rounded">
                     {sliderValues[slider.name].toFixed(2)}
                   </span>
                 </div>
+                <input
+                  type="range"
+                  min={slider.min}
+                  max={slider.max}
+                  step={slider.step}
+                  value={sliderValues[slider.name]}
+                  onChange={(e) =>
+                    setSliderValues((prev) => ({
+                      ...prev,
+                      [slider.name]: parseFloat(e.target.value),
+                    }))
+                  }
+                  className="w-full accent-[#2DD4BF]"
+                />
               </div>
             ))}
           </div>
@@ -228,7 +236,7 @@ plt.close('all')
           <Button
             onClick={runSimulation}
             disabled={running}
-            className="w-full bg-[#1B2A4E] hover:bg-[#1B2A4E]/90"
+            className="w-full bg-[#2DD4BF] text-[#1B2A4E] hover:bg-[#2DD4BF]/80 font-semibold"
           >
             {running ? (
               <>
@@ -238,19 +246,20 @@ plt.close('all')
             ) : (
               <>
                 <Play className="h-4 w-4" />
-                Exécuter
+                Exécuter la simulation
               </>
             )}
           </Button>
 
           {/* Output */}
-          <div className="mt-4 min-h-48 rounded-xl bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+          <div className="mt-4 min-h-48 rounded-xl bg-muted/30 border border-border flex items-center justify-center overflow-hidden">
             {error ? (
               <div className="p-3 text-sm text-red-500 font-mono">{error}</div>
             ) : imageData ? (
-              <img src={imageData} alt="Simulation" className="w-full rounded-xl" />
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={imageData} alt="Simulation" className="w-full h-auto" />
             ) : (
-              <span className="text-sm text-gray-400">
+              <span className="text-sm text-muted-foreground italic">
                 Cliquez « Exécuter » pour lancer la simulation
               </span>
             )}
@@ -258,19 +267,21 @@ plt.close('all')
         </div>
 
         {/* RIGHT: Adaptive challenge */}
-        <div className="p-5">
-          <h3 className="text-sm font-bold text-gray-700 dark:text-gray-200 mb-3">
+        <div className="p-5 bg-muted/10">
+          <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-[#1B2A4E] dark:text-[#2DD4BF] mb-3">
             🎯 Challenge
           </h3>
 
           {allSolved || !currentChallenge ? (
-            <div className="rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 p-4 text-sm text-green-700 dark:text-green-300">
-              🎉 Tous les challenges sont résolus ! Lab terminé.
+            <div className="rounded-xl bg-green-50 dark:bg-green-900/20 border-2 border-green-300 dark:border-green-700 p-4 text-sm text-green-700 dark:text-green-300 text-center">
+              <div className="text-3xl mb-2">🎉</div>
+              <p className="font-bold">Tous les challenges sont résolus !</p>
+              <p className="text-xs mt-1 opacity-80">Lab terminé avec succès.</p>
             </div>
           ) : (
             <div className="space-y-3">
-              <div className="rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 p-4">
-                <p className="text-sm text-gray-800 dark:text-gray-100 mb-3">
+              <div className="rounded-xl bg-[#1B2A4E]/5 dark:bg-[#2DD4BF]/10 border-2 border-[#1B2A4E]/20 dark:border-[#2DD4BF]/30 p-4">
+                <p className="text-sm text-foreground mb-3 leading-relaxed">
                   {currentChallenge.question}
                 </p>
 
@@ -280,27 +291,27 @@ plt.close('all')
                     value={answer}
                     onChange={(e) => setAnswer(e.target.value)}
                     placeholder="Votre réponse"
-                    className="flex-1"
+                    className="flex-1 border-[#1B2A4E]/30 focus:border-[#2DD4BF]"
                   />
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs font-mono text-muted-foreground">
                     {currentChallenge.unit ?? ""}
                   </span>
                 </div>
 
                 <Button
                   onClick={submitAnswer}
-                  className="mt-3 bg-purple-500 hover:bg-purple-600"
+                  className="mt-3 bg-[#1B2A4E] hover:bg-[#1B2A4E]/90 text-white w-full"
                   size="sm"
                 >
-                  Valider
+                  Valider ma réponse
                 </Button>
 
                 {currentChallenge.hint && (
-                  <details className="mt-2">
-                    <summary className="text-xs text-amber-600 cursor-pointer">
-                      💡 Indice
+                  <details className="mt-3">
+                    <summary className="text-xs text-[#C9A227] cursor-pointer font-medium hover:underline">
+                      💡 Besoin d'un indice ?
                     </summary>
-                    <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                    <p className="mt-1.5 text-xs text-muted-foreground italic bg-muted/50 p-2 rounded">
                       {currentChallenge.hint}
                     </p>
                   </details>

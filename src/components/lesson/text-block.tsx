@@ -1,16 +1,22 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useMemo } from "react";
 
 /**
- * TextBlock — renders Markdown + LaTeX content.
- * Uses a lightweight approach: we load MathJax on the client to render
- * $...$ and $$...$$ LaTeX. Markdown is parsed with a simple regex-based
- * converter (headings, bold, italic, code, lists, blockquotes).
+ * TextBlock — renders Markdown + LaTeX content with pedagogical styling.
  *
- * SECURITY: all text outside protected code/latex blocks is HTML-escaped
- * before markdown rules are applied, which prevents XSS via `<script>`,
- * `<img onerror=...>`, etc.
+ * FEATURES:
+ * - LaTeX via MathJax (loaded dynamically on client)
+ * - Markdown via custom regex parser (headings, bold, italic, code, lists,
+ *   blockquotes, tables, hr)
+ * - XSS protection: HTML is escaped before markdown rules apply
+ * - Callout boxes: blockquotes get colored based on their first character
+ *   - 💡 → tip (teal)
+ *   - ⚠️ → warning (gold)
+ *   - ✅ → success (green)
+ *   - ❌ → error (red)
+ *   - 📋 → definition (navy)
+ * - Display math ($$...$$) gets a subtle background card
  */
 
 export function TextBlock({ content }: { content: string }) {
@@ -27,7 +33,19 @@ export function TextBlock({ content }: { content: string }) {
           displayMath: [["$$", "$$"], ["\\[", "\\]"]],
           processEscapes: true,
           processEnvironments: true,
-          packages: { "[+]": ["ams", "boldsymbol", "cancel", "color", "bbox", "newcommand", "configmacros", "noundefined", "noerrors"] },
+          packages: {
+            "[+]": [
+              "ams",
+              "boldsymbol",
+              "cancel",
+              "color",
+              "bbox",
+              "newcommand",
+              "configmacros",
+              "noundefined",
+              "noerrors",
+            ],
+          },
         },
         options: {
           skipHtmlTags: ["script", "noscript", "style", "textarea", "pre", "code"],
@@ -47,7 +65,8 @@ export function TextBlock({ content }: { content: string }) {
     }
   }, [content]);
 
-  const html = markdownToHtml(content);
+  // Memoize HTML conversion so we don't recompute on every render
+  const html = useMemo(() => markdownToHtml(content), [content]);
 
   return (
     <div
@@ -59,24 +78,23 @@ export function TextBlock({ content }: { content: string }) {
 }
 
 /**
- * Simple Markdown to HTML converter with XSS protection.
- * Approach: HTML-escape the ENTIRE input first, then apply markdown rules.
- * Code blocks and LaTeX blocks are also escaped (so `<script>` in code is shown
- * as text, never executed).
+ * Simple Markdown to HTML converter with XSS protection + callout styling.
  */
 function markdownToHtml(md: string): string {
-  // Normalize line endings (handles Windows \r\n)
+  // Normalize line endings
   let html = md.replace(/\r\n/g, "\n").replace(/\\n/g, "\n");
 
-  // Escape all HTML first — this is the critical XSS defense.
+  // Escape all HTML first — critical XSS defense.
   html = escapeHtml(html);
 
-  // Protect fenced code blocks (```lang\ncode```)
+  // Detect callout type from the first emoji/character of blockquotes
+  // We'll process blockquotes specially to add CSS classes based on emoji prefix.
+  const calloutBlocks: string[] = [];
+
+  // Protect fenced code blocks
   const codeBlocks: string[] = [];
   html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (_m, _lang, code) => {
     const idx = codeBlocks.length;
-    // `code` is already escaped above (so `<` became `&lt;`). We render it as-is
-    // inside <pre><code>. No double-escape needed.
     codeBlocks.push(
       `<pre class="bg-gray-900 text-gray-100 rounded-lg p-4 overflow-x-auto text-sm font-mono"><code>${code.trim()}</code></pre>`,
     );
@@ -87,11 +105,13 @@ function markdownToHtml(md: string): string {
   const inlineCodes: string[] = [];
   html = html.replace(/`([^`\n]+)`/g, (_m, code) => {
     const idx = inlineCodes.length;
-    inlineCodes.push(`<code class="bg-muted px-1.5 py-0.5 rounded text-sm font-mono">${code}</code>`);
+    inlineCodes.push(
+      `<code class="bg-muted px-1.5 py-0.5 rounded text-sm font-mono">${code}</code>`,
+    );
     return `\u0000INLINE${idx}\u0000`;
   });
 
-  // Protect LaTeX ($$...$$ and $...$) — restored verbatim for MathJax
+  // Protect LaTeX ($$...$$ and $...$)
   const latexBlocks: string[] = [];
   html = html.replace(/\$\$([\s\S]*?)\$\$/g, (_m, tex) => {
     const idx = latexBlocks.length;
@@ -116,9 +136,42 @@ function markdownToHtml(md: string): string {
   html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
   html = html.replace(/(?<!\*)\*([^*\n]+?)\*(?!\*)/g, "<em>$1</em>");
 
-  // Blockquotes (callouts)
-  html = html.replace(/^&gt; (.+)$/gm, "<blockquote>$1</blockquote>");
-  html = html.replace(/<\/blockquote>\n<blockquote>/g, "\n");
+  // Blockquotes — with callout type detection
+  // Match consecutive blockquote lines (lines starting with >)
+  html = html.replace(/(?:^&gt; (.+)$\n?)+/gm, (block) => {
+    // Strip the &gt; prefix from each line
+    const content = block
+      .split("\n")
+      .map((line) => line.replace(/^&gt; /, "").trim())
+      .filter(Boolean)
+      .join(" ");
+
+    // Detect callout type from leading emoji
+    let calloutClass = "callout-info";
+    let calloutIcon = "";
+    if (content.startsWith("💡")) {
+      calloutClass = "callout-tip";
+      calloutIcon = "💡";
+    } else if (content.startsWith("⚠️") || content.startsWith("⚠")) {
+      calloutClass = "callout-warning";
+      calloutIcon = "⚠️";
+    } else if (content.startsWith("✅")) {
+      calloutClass = "callout-success";
+      calloutIcon = "✅";
+    } else if (content.startsWith("❌")) {
+      calloutClass = "callout-error";
+      calloutIcon = "❌";
+    } else if (content.startsWith("📋") || content.startsWith("📝")) {
+      calloutClass = "callout-definition";
+      calloutIcon = "📋";
+    }
+
+    const idx = calloutBlocks.length;
+    calloutBlocks.push(
+      `<blockquote class="${calloutClass}">${content}</blockquote>`,
+    );
+    return `\u0000CALLOUT${idx}\u0000`;
+  });
 
   // Lists (unordered)
   html = html.replace(/^- (.+)$/gm, "<li>$1</li>");
@@ -126,6 +179,37 @@ function markdownToHtml(md: string): string {
 
   // Lists (ordered)
   html = html.replace(/^\d+\. (.+)$/gm, "<li>$1</li>");
+
+  // Tables — convert markdown tables to HTML
+  // Match: header row | separator | data rows
+  html = html.replace(
+    /(?:^\|[^\n]+\|\s*\n)(?:^\|[\s\-:|]+\|\s*\n)((?:^\|[^\n]+\|\s*\n?)+)/gm,
+    (table) => {
+      const lines = table.trim().split("\n");
+      const headerCells = lines[0]
+        .split("|")
+        .map((c) => c.trim())
+        .filter(Boolean);
+      const bodyRows = lines.slice(2).map((line) =>
+        line
+          .split("|")
+          .map((c) => c.trim())
+          .filter(Boolean),
+      );
+
+      const thead = `<thead><tr>${headerCells
+        .map((c) => `<th>${c}</th>`)
+        .join("")}</tr></thead>`;
+      const tbody = `<tbody>${bodyRows
+        .map(
+          (row) =>
+            `<tr>${row.map((c) => `<td>${c}</td>`).join("")}</tr>`,
+        )
+        .join("")}</tbody>`;
+
+      return `<table>${thead}${tbody}</table>`;
+    },
+  );
 
   // Horizontal rule
   html = html.replace(/^---$/gm, "<hr/>");
@@ -138,6 +222,11 @@ function markdownToHtml(md: string): string {
       return `<p>${block.trim().replace(/\n/g, "<br/>")}</p>`;
     })
     .join("\n");
+
+  // Restore callout blocks
+  calloutBlocks.forEach((cb, i) => {
+    html = html.replace(`\u0000CALLOUT${i}\u0000`, cb);
+  });
 
   // Restore code blocks and inline code
   codeBlocks.forEach((cb, i) => {
