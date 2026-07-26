@@ -63,17 +63,28 @@ export function LabBlock({ lab }: { lab: InteractiveLab }) {
   const loadPyodide = useCallback(async () => {
     if (pyodideRef.current) return pyodideRef.current;
 
+    const PYODIDE_VERSION = "0.26.2";
+    const PYODIDE_CDN = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
+
     if (!(window as unknown as Record<string, unknown>).loadPyodide) {
       await new Promise<void>((resolve, reject) => {
         const script = document.createElement("script");
-        script.src = "https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js";
+        script.src = `${PYODIDE_CDN}pyodide.js`;
         script.onload = () => resolve();
-        script.onerror = () => reject(new Error("Failed to load Pyodide"));
+        script.onerror = () =>
+          reject(
+            new Error(
+              "Impossible de charger Pyodide. Vérifie ta connexion internet.",
+            ),
+          );
         document.head.appendChild(script);
       });
     }
 
-    const py = await (window as unknown as Record<string, () => Promise<unknown>>).loadPyodide();
+    // Pass indexURL so Pyodide can find its WASM files
+    const py = await (window as unknown as Record<string, (opts: { indexURL: string }) => Promise<unknown>>).loadPyodide({
+      indexURL: PYODIDE_CDN,
+    });
     await (py as { loadPackage: (pkgs: string[]) => Promise<void> }).loadPackage([
       "matplotlib",
       "numpy",

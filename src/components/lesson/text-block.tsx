@@ -84,6 +84,16 @@ function markdownToHtml(md: string): string {
   // Normalize line endings
   let html = md.replace(/\r\n/g, "\n").replace(/\\n/g, "\n");
 
+  // Protect inline SVG blocks BEFORE escaping — these are raw HTML we want
+  // to render as actual SVG, not escaped text. We extract them, escape the
+  // rest, then restore them.
+  const svgBlocks: string[] = [];
+  html = html.replace(/<svg[\s\S]*?<\/svg>/gi, (match) => {
+    const idx = svgBlocks.length;
+    svgBlocks.push(match);
+    return `\u0000SVG${idx}\u0000`;
+  });
+
   // Escape all HTML first — critical XSS defense.
   html = escapeHtml(html);
 
@@ -226,6 +236,11 @@ function markdownToHtml(md: string): string {
   // Restore callout blocks
   calloutBlocks.forEach((cb, i) => {
     html = html.replace(`\u0000CALLOUT${i}\u0000`, cb);
+  });
+
+  // Restore SVG blocks (raw HTML, not escaped)
+  svgBlocks.forEach((sb, i) => {
+    html = html.replace(`\u0000SVG${i}\u0000`, sb);
   });
 
   // Restore code blocks and inline code

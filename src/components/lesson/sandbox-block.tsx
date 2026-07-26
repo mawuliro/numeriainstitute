@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
-import { Play, RotateCcw, Copy } from "lucide-react";
+import { Play, RotateCcw, Copy, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export function SandboxBlock({ title, code }: { title: string; code: string }) {
@@ -9,31 +9,49 @@ export function SandboxBlock({ title, code }: { title: string; code: string }) {
   const [imageData, setImageData] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [pyodideReady, setPyodideReady] = useState(false);
+  const [loadingPyodide, setLoadingPyodide] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pyodideRef = useRef<unknown>(null);
 
   const loadPyodide = useCallback(async () => {
     if (pyodideRef.current) return pyodideRef.current;
 
-    // Load script if not present
-    if (!(window as unknown as Record<string, unknown>).loadPyodide) {
-      await new Promise<void>((resolve, reject) => {
-        const script = document.createElement("script");
-        script.src = "https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js";
-        script.onload = () => resolve();
-        script.onerror = () => reject(new Error("Failed to load Pyodide"));
-        document.head.appendChild(script);
-      });
-    }
+    setLoadingPyodide(true);
 
-    const py = await (window as unknown as Record<string, () => Promise<unknown>>).loadPyodide();
-    await (py as { loadPackage: (pkgs: string[]) => Promise<void> }).loadPackage([
-      "matplotlib",
-      "numpy",
-    ]);
-    pyodideRef.current = py;
-    setPyodideReady(true);
-    return py;
+    const PYODIDE_VERSION = "0.26.2";
+    const PYODIDE_CDN = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
+
+    try {
+      // Load script if not present
+      if (!(window as unknown as Record<string, unknown>).loadPyodide) {
+        await new Promise<void>((resolve, reject) => {
+          const script = document.createElement("script");
+          script.src = `${PYODIDE_CDN}pyodide.js`;
+          script.onload = () => resolve();
+          script.onerror = () =>
+            reject(
+              new Error(
+                "Impossible de charger Pyodide depuis le CDN. Vérifie ta connexion internet (le fichier fait ~10 Mo).",
+              ),
+            );
+          document.head.appendChild(script);
+        });
+      }
+
+      // Pass indexURL so Pyodide can find its WASM files
+      const py = await (window as unknown as Record<string, (opts: { indexURL: string }) => Promise<unknown>>).loadPyodide({
+        indexURL: PYODIDE_CDN,
+      });
+      await (py as { loadPackage: (pkgs: string[]) => Promise<void> }).loadPackage([
+        "matplotlib",
+        "numpy",
+      ]);
+      pyodideRef.current = py;
+      setPyodideReady(true);
+      return py;
+    } finally {
+      setLoadingPyodide(false);
+    }
   }, []);
 
   const runCode = useCallback(async () => {
@@ -119,11 +137,25 @@ plt.close('all')
           <Button
             size="sm"
             onClick={runCode}
-            disabled={running}
+            disabled={running || loadingPyodide}
             className="h-7 text-xs bg-[#2DD4BF] text-[#1B2A4E] hover:bg-[#2DD4BF]/80 font-semibold"
           >
-            <Play className="h-3 w-3" />
-            {running ? "Exécution..." : "Exécuter"}
+            {loadingPyodide ? (
+              <>
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Chargement Python... (~10s)
+              </>
+            ) : running ? (
+              <>
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Exécution...
+              </>
+            ) : (
+              <>
+                <Play className="h-3 w-3" />
+                {pyodideReady ? "Exécuter" : "Exécuter"}
+              </>
+            )}
           </Button>
         </div>
       </div>
