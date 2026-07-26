@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Trash2 } from "lucide-react";
 import { updateUserRoleAction, deleteUserAction, verifyUserAction } from "./actions";
 import { DeleteUserButton } from "./delete-user-button";
+import { RoleSelect } from "./role-select";
 
 export default async function AdminUsersPage() {
   let users: Array<{
@@ -19,6 +20,8 @@ export default async function AdminUsersPage() {
     _count: { enrollments: number; lessonProgress: number; badges: number };
   }> = [];
 
+  let loadError: string | null = null;
+
   try {
     users = await db.user.findMany({
       where: { deletedAt: null },
@@ -30,9 +33,33 @@ export default async function AdminUsersPage() {
     });
   } catch (err) {
     console.error("[admin/utilisateurs] DB error:", err);
-    // Surface a clear error to the user
-    throw new Error(
-      `Impossible de charger les utilisateurs: ${err instanceof Error ? err.message : String(err)}`,
+    loadError = err instanceof Error
+      ? `${err.name}: ${err.message}\n${err.stack ?? ""}`
+      : String(err);
+  }
+
+  // If the DB query failed, render the error inline (not via throw → error.tsx)
+  // so the actual message is visible to the admin.
+  if (loadError) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold">Utilisateurs</h1>
+          <p className="text-sm text-muted-foreground">Erreur de chargement</p>
+        </div>
+        <Card>
+          <CardContent className="p-6">
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950/30">
+              <p className="text-sm font-semibold text-red-700 dark:text-red-300">
+                Impossible de charger les utilisateurs
+              </p>
+              <pre className="mt-3 whitespace-pre-wrap break-all text-xs text-red-600 dark:text-red-400">
+                {loadError}
+              </pre>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
@@ -68,14 +95,11 @@ export default async function AdminUsersPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <form action={updateUserRoleAction} className="inline">
-                        <input type="hidden" name="userId" value={user.id} />
-                        <select name="role" defaultValue={user.role} onChange={(e) => e.currentTarget.form?.requestSubmit()} className="rounded-md border border-border bg-background px-2 py-1 text-xs">
-                          <option value="STUDENT">Étudiant</option>
-                          <option value="STAFF">Staff</option>
-                          <option value="ADMIN">Admin</option>
-                        </select>
-                      </form>
+                      <RoleSelect
+                        userId={user.id}
+                        defaultRole={user.role}
+                        action={updateUserRoleAction}
+                      />
                     </td>
                     <td className="px-4 py-3">{user._count.enrollments}</td>
                     <td className="px-4 py-3">🏆 {user._count.badges}</td>
