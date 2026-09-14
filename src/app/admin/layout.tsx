@@ -8,6 +8,7 @@ import {
   Users,
   FileText,
   Video,
+  Mail,
   Settings,
   type LucideIcon,
 } from "lucide-react";
@@ -17,6 +18,7 @@ const ADMIN_NAV: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/admin/cours", label: "Cours", icon: BookOpen },
   { href: "/admin/blog", label: "Blog", icon: FileText },
   { href: "/admin/visioconference", label: "Visioconférence", icon: Video },
+  { href: "/admin/invitations", label: "Invitations", icon: Mail },
   { href: "/admin/utilisateurs", label: "Utilisateurs", icon: Users },
 ];
 

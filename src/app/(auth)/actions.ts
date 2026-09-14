@@ -17,7 +17,7 @@ import { sendVerificationEmail } from "@/lib/email";
 const BASE_URL = process.env.NEXTAUTH_URL || "http://localhost:3000";
 const VERIFY_TOKEN_EXPIRY_HOURS = 24;
 
-// ── Signup ──
+// ── Signup (invitation-only) ──
 export async function signupAction(formData: FormData) {
   const email = (formData.get("email") as string)?.toLowerCase().trim();
   const password = formData.get("password") as string;
@@ -26,6 +26,8 @@ export async function signupAction(formData: FormData) {
   const lastName = (formData.get("lastName") as string)?.trim();
   const avatarUrl = (formData.get("avatarUrl") as string)?.trim() || null;
   const agreed = formData.get("agreed");
+  const inviteToken = (formData.get("inviteToken") as string)?.trim() || null;
+  const courseId = (formData.get("courseId") as string)?.trim() || null;
 
   if (!email || !password) {
     return { error: "Email et mot de passe requis" };
@@ -69,51 +71,121 @@ export async function signupAction(formData: FormData) {
     };
   }
 
-  const fullName = `${firstName} ${lastName}`.trim();
-
-  // M43: don't reveal if email is already registered. Send the verification
-  // email silently and redirect to the "check your email" page either way.
-  const existing = await db.user.findUnique({ where: { email } });
-  if (!existing) {
-    const passwordHash = await bcrypt.hash(password, 12);
-    const token = generateToken();
-    const tokenExpiry = new Date(Date.now() + VERIFY_TOKEN_EXPIRY_HOURS * 60 * 60 * 1000);
-
-    const user = await db.user.create({
-      data: {
-        email,
-        firstName,
-        lastName,
-        name: fullName,
-        avatarUrl,
-        passwordHash,
-        role: "STUDENT",
-        isVerified: false,
-        emailVerifyToken: hashToken(token),
-        emailVerifyExpires: tokenExpiry,
-      },
-    });
-
-    await db.notification.create({
-      data: {
-        userId: user.id,
-        title: "Bienvenue sur Numeria Institute ! 🎉",
-        message: `Bonjour ${firstName} ! Ton compte a été créé. Vérifie ton email pour l'activer, puis explore nos cours gratuits.`,
-        link: "/cours",
-      },
-    });
-
-    const emailSent = await sendVerificationEmail(email, fullName, token, BASE_URL);
-    const params = new URLSearchParams({ email });
-    if (!emailSent) {
-      params.set("failed", "true");
-      params.set("token", token);
-    }
-    redirect(`/verifier-email-sent?${params.toString()}`);
+  // ── Invitation-only system ──
+  // A valid invitation token is REQUIRED to sign up
+  if (!inviteToken) {
+    return {
+      error:
+        "L'inscription est sur invitation uniquement. Tu dois avoir reçu un email d'invitation pour créer un compte.",
+    };
   }
 
-  // Account already exists — silently redirect (no info disclosure)
+  // Validate the invitation token
+  const hashedInviteToken = hashToken(inviteToken);
+  const invitation = await db.invitation.findFirst({
+    where: {
+      token: hashedInviteToken,
+      usedAt: null,
+      expiresAt: { gt: new Date() },
+    },
+  });
+
+  if (!invitation) {
+    return {
+      error:
+        "Invitation invalide ou expirée. Contacte l'administrateur qui t'a invité(e) pour en recevoir une nouvelle.",
+    };
+  }
+
+  // The email must match the invitation email
+  if (invitation.email !== email) {
+    return {
+      error:
+        "L'email ne correspond pas à l'invitation. Utilise l'email à laquelle l'invitation a été envoyée.",
+    };
+  }
+
+  const fullName = `${firstName} ${lastName}`.trim();
+
+  // Check if user already exists
+  const existing = await db.user.findUnique({ where: { email } });
+  if (existing) {
+    return {
+      error: "Un compte existe déjà avec cet email. Connecte-toi ou demande une réinitialisation de mot de passe.",
+    };
+  }
+
+  // Create the user
+  const passwordHash = await bcrypt.hash(password, 12);
+  const token = generateToken();
+  const tokenExpiry = new Date(Date.now() + VERIFY_TOKEN_EXPIRY_HOURS * 60 * 60 * 1000);
+
+  const user = await db.user.create({
+    data: {
+      email,
+      firstName,
+      lastName,
+      name: fullName,
+      avatarUrl,
+      passwordHash,
+      role: "STUDENT",
+      isVerified: false,
+      emailVerifyToken: hashToken(token),
+      emailVerifyExpires: tokenExpiry,
+    },
+  });
+
+  // Mark the invitation as used
+  await db.invitation.update({
+    where: { id: invitation.id },
+    data: {
+      usedAt: new Date(),
+      usedBy: user.id,
+    },
+  });
+
+  // If the invitation specified a course, auto-enroll the user
+  if (invitation.courseId || courseId) {
+    const cid = invitation.courseId || courseId!;
+    const course = await db.course.findUnique({
+      where: { id: cid },
+      select: { title: true },
+    });
+
+    const existingEnrollment = await db.enrollment.findUnique({
+      where: { userId_courseId: { userId: user.id, courseId: cid } },
+    });
+
+    if (!existingEnrollment && course) {
+      await db.enrollment.create({
+        data: { userId: user.id, courseId: cid },
+      });
+      await db.notification.create({
+        data: {
+          userId: user.id,
+          title: "Inscription au cours",
+          message: `Tu es inscrit(e) au cours « ${course.title} ». Bon apprentissage !`,
+          link: `/cours/${cid}`,
+        },
+      });
+    }
+  }
+
+  await db.notification.create({
+    data: {
+      userId: user.id,
+      title: "Bienvenue sur Numeria Institute ! 🎉",
+      message: `Bonjour ${firstName} ! Ton compte a été créé. Vérifie ton email pour l'activer, puis explore nos cours.`,
+      link: "/cours",
+    },
+  });
+
+  const emailSent = await sendVerificationEmail(email, fullName, token, BASE_URL);
   const params = new URLSearchParams({ email });
+  if (!emailSent) {
+    params.set("failed", "true");
+    params.set("token", token);
+  }
   redirect(`/verifier-email-sent?${params.toString()}`);
 }
 

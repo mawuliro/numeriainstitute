@@ -122,3 +122,92 @@ export async function sendVerificationEmail(
     html,
   });
 }
+
+/**
+ * Send an invitation email — admin invites someone to join Numeria Institute.
+ */
+export async function sendInvitationEmail(
+  email: string,
+  inviteToken: string,
+  baseUrl: string,
+  courseTitle?: string | null,
+  adminMessage?: string | null,
+): Promise<boolean> {
+  const signupUrl = `${baseUrl}/signup?invite=${inviteToken}`;
+
+  const courseSection = courseTitle
+    ? `<p style="background: #f0f9f8; border-left: 4px solid #2DD4BF; padding: 12px 16px; margin: 20px 0; border-radius: 4px;">
+         <strong style="color: #1B2A4E;">Cours :</strong> ${escapeHtml(courseTitle)}
+       </p>`
+    : "";
+
+  const messageSection = adminMessage
+    ? `<div style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 16px; margin: 20px 0; border-radius: 8px;">
+         <p style="margin: 0 0 8px; font-size: 13px; color: #64748b; font-weight: 600;">Message de l'administrateur :</p>
+         <p style="margin: 0; color: #334155; font-style: italic;">${escapeHtml(adminMessage)}</p>
+       </div>`
+    : "";
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+      <div style="text-align: center; margin-bottom: 30px;">
+        <h1 style="color: #1B2A4E; font-size: 24px;">NUMERIA <span style="color: #2DD4BF;">Institute</span></h1>
+      </div>
+
+      <h2 style="color: #1B2A4E;">Tu es invité(e) sur Numeria Institute ! 🎉</h2>
+
+      <p>Bonjour,</p>
+
+      <p>Tu as été invité(e) par un administrateur de Numeria Institute à rejoindre notre plateforme d'apprentissage interactif.</p>
+
+      ${courseSection}
+
+      ${messageSection}
+
+      <p>Pour finaliser ton inscription, clique sur le bouton ci-dessous :</p>
+
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="${signupUrl}" style="background-color: #2DD4BF; color: #1B2A4E; padding: 14px 36px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block; font-size: 16px;">
+          Créer mon compte →
+        </a>
+      </div>
+
+      <p style="color: #666; font-size: 14px;">
+        Ou copie ce lien :<br>
+        <a href="${signupUrl}" style="color: #2DD4BF; word-break: break-all;">${signupUrl}</a>
+      </p>
+
+      <div style="background: #fef3c7; border: 1px solid #fde68a; padding: 12px 16px; margin: 20px 0; border-radius: 8px;">
+        <p style="margin: 0; color: #92400e; font-size: 13px;">
+          ⏰ Cette invitation expire dans 7 jours.
+        </p>
+      </div>
+
+      <p style="color: #999; font-size: 12px; margin-top: 30px;">
+        Si tu n'attendais pas cette invitation, tu peux ignorer cet email en toute sécurité.
+      </p>
+
+      <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
+      <p style="color: #999; font-size: 12px; text-align: center;">
+        © ${new Date().getFullYear()} Numeria Institute · Lomé, Togo
+      </p>
+    </div>
+  `;
+
+  return sendEmail({
+    to: email,
+    subject: courseTitle
+      ? `Numeria Institute — Tu es invité(e) au cours « ${courseTitle} »`
+      : "Numeria Institute — Tu es invité(e) à rejoindre la plateforme",
+    html,
+  });
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}

@@ -29,7 +29,17 @@ import { toast } from "sonner";
 
 type State = { error?: string } | null;
 
-export function SignupForm({ locale }: { locale: Locale }) {
+export function SignupForm({
+  locale,
+  inviteToken,
+  prefillEmail,
+  courseId,
+}: {
+  locale: Locale;
+  inviteToken?: string;
+  prefillEmail?: string;
+  courseId?: string | null;
+}) {
   const [state, formAction, pending] = useActionState<State, FormData>(
     async (_prev, formData) => {
       // If user uploaded an avatar, the avatarUrl is already in a hidden input
@@ -45,7 +55,7 @@ export function SignupForm({ locale }: { locale: Locale }) {
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(prefillEmail ?? "");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -277,6 +287,8 @@ export function SignupForm({ locale }: { locale: Locale }) {
                 {locale === "fr" ? "JPG, PNG, WEBP ou GIF · max 5 Mo" : "JPG, PNG, WEBP or GIF · max 5MB"}
               </p>
               <input type="hidden" name="avatarUrl" value={avatarUrl ?? ""} />
+              {inviteToken && <input type="hidden" name="inviteToken" value={inviteToken} />}
+              {courseId && <input type="hidden" name="courseId" value={courseId} />}
             </div>
 
             {/* First name + Last name */}
@@ -334,7 +346,8 @@ export function SignupForm({ locale }: { locale: Locale }) {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10"
+                  readOnly={!!prefillEmail}
+                  className={`pl-10 ${prefillEmail ? "bg-muted text-muted-foreground cursor-not-allowed" : ""}`}
                 />
               </div>
             </div>

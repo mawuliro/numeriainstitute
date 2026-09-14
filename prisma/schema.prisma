@@ -58,6 +58,7 @@ model User {
   badges           UserBadge[]
   streak           UserStreak?
   certificates     Certificate[]
+  invitationsSent  Invitation[]
 
   @@index([emailVerifyToken])
   @@index([passwordResetToken])
@@ -99,6 +100,7 @@ model Course {
   topics      CommunityTopic[]
   reviews     CourseReview[]
   certificates Certificate[]
+  invitations Invitation[]
 
   @@index([slug])
   @@index([status])
@@ -647,4 +649,29 @@ model Certificate {
 
   @@unique([userId, courseId])
   @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Invitations — admin-invited signup (invitation-only system)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Invitation {
+  id            String    @id @default(cuid())
+  email         String
+  token         String    @unique
+  invitedBy     String
+  courseId      String?
+  message       String?
+  createdAt     DateTime  @default(now())
+  expiresAt     DateTime
+  usedAt        DateTime?
+  usedBy        String?
+
+  invitedByUser User      @relation(fields: [invitedBy], references: [id], onDelete: Cascade)
+  course        Course?   @relation(fields: [courseId], references: [id], onDelete: SetNull)
+
+  @@index([email])
+  @@index([token])
+  @@index([invitedBy])
+  @@index([expiresAt])
 }
